@@ -15,6 +15,7 @@ final class CaptureCoordinator {
     private var hudWindowController: HUDWindowController?
     private var recognitionTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
+    private var cursorTimer: Timer?
 
     /// Drives the bottom-of-screen progress box; nil means idle (tear down).
     /// Only TrOCR reports phases -- Tesseract runs fast enough not to need it.
@@ -43,13 +44,14 @@ final class CaptureCoordinator {
         for screen in NSScreen.screens {
             let window = SelectionOverlayWindow(screen: screen)
             let view = SelectionOverlayView(frame: screen.frame)
+            view.screen = screen
             view.onComplete = { [weak self] rect in
                 self?.finishSelection(rect: rect, screen: screen, mode: mode, saveFixture: saveFixture)
             }
             window.contentView = view
+            // Prime before ordering in: the window draws its first frame as soon as it's shown.
+            view.primeMouseLocation(window.convertPoint(fromScreen: NSEvent.mouseLocation))
             window.orderFrontRegardless()
-            let locationInWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-            view.primeMouseLocation(locationInWindow)
             overlayWindows.append(window)
         }
         // The overlay under the pointer takes the keyboard and sets the cursor right away.
@@ -57,6 +59,11 @@ final class CaptureCoordinator {
         let target = overlayWindows.first { $0.frame.contains(mouse) } ?? overlayWindows.first
         target?.makeKey()
         SelectionOverlayView.cursor.set()
+        // Apps underneath (Electron ones especially) set their cursor even while in the
+        // background, which overrides ours when the mouse sits still; keep reasserting it.
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            SelectionOverlayView.cursor.set()
+        }
         // Activation can land after this (another app was frontmost); the active app's cursor
         // then wins until we set ours again, so take the key window and cursor once more.
         if !NSApp.isActive {
@@ -75,6 +82,8 @@ final class CaptureCoordinator {
     private func finishSelection(rect: CGRect?, screen: NSScreen, mode: CaptureMode, saveFixture: Bool = false) {
         overlayWindows.forEach { $0.orderOut(nil) }
         overlayWindows.removeAll()
+        cursorTimer?.invalidate()
+        cursorTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
         NSCursor.arrow.set()   // the app stays active with no windows, so drop the reticle now

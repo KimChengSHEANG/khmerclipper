@@ -27,6 +27,8 @@ final class SelectionOverlayWindow: NSWindow {
 
 final class SelectionOverlayView: NSView {
     var onComplete: ((CGRect?) -> Void)?
+    /// Set at creation: `window?.screen` can still be nil while a new window draws its first frame.
+    var screen: NSScreen?
 
     private var dragStart: NSPoint?
     private var currentRect: CGRect = .zero
@@ -47,7 +49,17 @@ final class SelectionOverlayView: NSView {
 
     /// The capture reticle is a real cursor, not drawn into the view: the system draws it at the
     /// pointer with no lag, while redrawing a full-screen view on every move trailed the mouse.
+    /// It is macOS's own ⌘⇧4 crosshair, loaded from where the system keeps it, so it matches the
+    /// built-in screenshot tool exactly; the drawn plus is a fallback if that file ever moves.
     static let cursor: NSCursor = {
+        let dir = "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/"
+            + "HIServices.framework/Versions/A/Resources/cursors/screenshotselection/"
+        if let image = NSImage(contentsOfFile: dir + "cursor.pdf") {
+            let info = NSDictionary(contentsOfFile: dir + "info.plist")
+            let x = (info?["hotx"] as? NSNumber)?.doubleValue ?? image.size.width / 2
+            let y = (info?["hoty"] as? NSNumber)?.doubleValue ?? image.size.height / 2
+            return NSCursor(image: image, hotSpot: NSPoint(x: x, y: y))
+        }
         let size: CGFloat = 32, arm: CGFloat = 12, c = size / 2
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
             let shadow = NSShadow()
@@ -129,24 +141,25 @@ final class SelectionOverlayView: NSView {
 
     /// Shows the pointer's screen-pixel coordinates stacked below the cursor, mirroring macOS's own screenshot tool.
     private func drawCoordinateNumbers() {
-        guard let screen = window?.screen else { return }
+        guard let screen = screen ?? window?.screen else { return }
         let globalAppKitPoint = NSPoint(x: screen.frame.origin.x + mouseLocation.x, y: screen.frame.origin.y + mouseLocation.y)
         let primaryHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height ?? screen.frame.height
         let x = Int(globalAppKitPoint.x)
         let y = Int(primaryHeight - globalAppKitPoint.y)
 
+        // Small, regular-weight digits with a faint white halo, like the ⌘⇧4 readout.
         let textShadow = NSShadow()
-        textShadow.shadowColor = NSColor.white.withAlphaComponent(0.9)
-        textShadow.shadowBlurRadius = 1.5
+        textShadow.shadowColor = NSColor.white.withAlphaComponent(0.8)
+        textShadow.shadowBlurRadius = 1
         textShadow.shadowOffset = .zero
 
         let attributed = NSAttributedString(string: "\(x)\n\(y)", attributes: [
-            .font: NSFont.boldSystemFont(ofSize: 13),
-            .foregroundColor: NSColor.black,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+            .foregroundColor: NSColor.black.withAlphaComponent(0.85),
             .shadow: textShadow
         ])
         let size = attributed.size()
-        attributed.draw(at: NSPoint(x: mouseLocation.x + 10, y: mouseLocation.y - size.height - 2))
+        attributed.draw(at: NSPoint(x: mouseLocation.x + 8, y: mouseLocation.y - size.height - 6))
     }
 
     private func drawLabel(_ text: String, near point: NSPoint) {
