@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Floating progress box shown near the bottom of the screen while OCR runs,
+/// Floating progress box shown in the middle of the screen while OCR runs,
 /// with a phase label, percentage, and a Cancel button. TrOCR's decode loop can
 /// take several seconds, so this gives live feedback plus a way to bail out.
 @MainActor
@@ -32,11 +32,11 @@ final class OCRProgressController: NSWindowController {
         }
     }
 
-    /// Bottom-centre of the screen, clear of the area the user just selected.
+    /// Middle of the screen.
     private func place() {
         guard let window, let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: area.midX - window.frame.width / 2, y: area.minY + 80))
+        window.setFrameOrigin(NSPoint(x: area.midX - window.frame.width / 2, y: area.midY - window.frame.height / 2))
     }
 
     private init(onCancel: @escaping () -> Void) {

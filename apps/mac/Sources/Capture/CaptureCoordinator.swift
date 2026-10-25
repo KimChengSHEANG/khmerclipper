@@ -17,7 +17,7 @@ final class CaptureCoordinator {
     private var activationObserver: NSObjectProtocol?
     private var cursorTimer: Timer?
 
-    /// Drives the bottom-of-screen progress box; nil means idle (tear down).
+    /// Drives the floating progress box; nil means idle (tear down).
     /// Only TrOCR reports phases -- Tesseract runs fast enough not to need it.
     var onOCRProgress: (@MainActor (OCRProgress?) -> Void)?
 
