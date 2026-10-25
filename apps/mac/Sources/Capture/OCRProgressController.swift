@@ -41,7 +41,7 @@ final class OCRProgressController: NSWindowController {
 
     private init(onCancel: @escaping () -> Void) {
         let hosting = NSHostingController(rootView: OCRProgressView(model: model, onCancel: onCancel))
-        hosting.sizingOptions = [.preferredContentSize]   // window tracks SwiftUI's fitting size
+        hosting.sizingOptions = []   // sized once below: continuous sizing can loop (see HUDWindowController)
         let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 140),
                              styleMask: [.nonactivatingPanel, .fullSizeContentView],
                              backing: .buffered, defer: false)
@@ -51,6 +51,7 @@ final class OCRProgressController: NSWindowController {
         window.hasShadow = true
         window.isMovableByWindowBackground = true
         window.contentViewController = hosting
+        window.setContentSize(hosting.sizeThatFits(in: NSSize(width: 600, height: 600)))
         super.init(window: window)
     }
 

@@ -36,8 +36,12 @@ final class HUDWindowController: NSWindowController {
             if case .ready(let text) = kind { ClipboardManager.copy(text) }
             self?.close()
         })
-        hosting.sizingOptions = [.preferredContentSize]   // window tracks SwiftUI's fitting size
+        // Sized once from the content. Letting SwiftUI resize the window continuously
+        // (.preferredContentSize) looped on wrapping text: resize, re-layout, resize… until the
+        // main thread's stack overflowed.
+        hosting.sizingOptions = []
         window.contentViewController = hosting
+        window.setContentSize(hosting.sizeThatFits(in: NSSize(width: 600, height: 600)))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -45,8 +49,6 @@ final class HUDWindowController: NSWindowController {
     private func showAndAutoDismiss(after seconds: Double) {
         center()
         window?.orderFrontRegardless()
-        // preferredContentSize resizes on the next runloop tick; re-center once it has.
-        DispatchQueue.main.async { [weak self] in self?.center() }
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             self?.close()
         }
