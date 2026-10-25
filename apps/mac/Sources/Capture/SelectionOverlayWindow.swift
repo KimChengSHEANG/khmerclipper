@@ -16,6 +16,13 @@ final class SelectionOverlayWindow: NSWindow {
     }
 
     override var canBecomeKey: Bool { true }
+
+    /// Key alone isn't enough for Esc/Space: the view must be first responder, or the
+    /// window swallows the key presses.
+    override func becomeKey() {
+        super.becomeKey()
+        makeFirstResponder(contentView)
+    }
 }
 
 final class SelectionOverlayView: NSView {
@@ -38,11 +45,43 @@ final class SelectionOverlayView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    /// Primes the reticle/coordinate readout with the cursor's current position so they
-    /// render immediately on activation instead of waiting for the first mouse move.
+    /// The capture reticle is a real cursor, not drawn into the view: the system draws it at the
+    /// pointer with no lag, while redrawing a full-screen view on every move trailed the mouse.
+    static let cursor: NSCursor = {
+        let size: CGFloat = 32, arm: CGFloat = 12, c = size / 2
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.white.withAlphaComponent(0.9)
+            shadow.shadowBlurRadius = 1.5
+            shadow.shadowOffset = .zero
+            shadow.set()
+            NSColor.black.setStroke()
+            let plus = NSBezierPath()
+            plus.lineWidth = 1.2
+            plus.move(to: NSPoint(x: c - arm, y: c))
+            plus.line(to: NSPoint(x: c + arm, y: c))
+            plus.move(to: NSPoint(x: c, y: c - arm))
+            plus.line(to: NSPoint(x: c, y: c + arm))
+            plus.stroke()
+            return true
+        }
+        return NSCursor(image: image, hotSpot: NSPoint(x: c, y: c))
+    }()
+
+    /// Primes the coordinate readout with the cursor's current position so it renders
+    /// immediately instead of waiting for the first mouse move.
     func primeMouseLocation(_ locationInWindow: NSPoint) {
         mouseLocation = convert(locationInWindow, from: nil)
-        needsDisplay = true
+        setNeedsDisplay(readoutRect(at: mouseLocation))
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: Self.cursor)
+    }
+
+    /// Area the coordinate readout covers next to the pointer (see drawCoordinateNumbers).
+    private func readoutRect(at point: NSPoint) -> NSRect {
+        NSRect(x: point.x + 4, y: point.y - 46, width: 100, height: 46)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -70,53 +109,25 @@ final class SelectionOverlayView: NSView {
             drawLabel(String(format: "%.0f × %.0f", currentRect.width, currentRect.height), near: mouseLocation)
         }
 
-        drawCrosshairCursor()
         if !isWindowMode && currentRect == .zero {
             drawCoordinateNumbers()
         }
     }
 
     override func mouseMoved(with event: NSEvent) {
+        let previous = mouseLocation
         mouseLocation = convert(event.locationInWindow, from: nil)
+        Self.cursor.set()   // reasserts it if another app's cursor won the race at activation
         if isWindowMode {
             updateHoveredWindow(at: event.locationInWindow)
         } else {
-            needsDisplay = true
+            // Only the readout moves: repaint its old and new spots, not the whole screen.
+            setNeedsDisplay(readoutRect(at: previous))
+            setNeedsDisplay(readoutRect(at: mouseLocation))
         }
     }
 
-    /// Draws a target-reticle cursor (circle + crosshair) since the real cursor is hidden during capture.
-    private func drawCrosshairCursor() {
-        let armLength: CGFloat = 12
-        let radius: CGFloat = 5
-
-        NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.white.withAlphaComponent(0.9)
-        shadow.shadowBlurRadius = 1.5
-        shadow.shadowOffset = .zero
-        shadow.set()
-
-        NSColor.black.setStroke()
-        let plus = NSBezierPath()
-        plus.lineWidth = 1.2
-        plus.move(to: NSPoint(x: mouseLocation.x - armLength, y: mouseLocation.y))
-        plus.line(to: NSPoint(x: mouseLocation.x + armLength, y: mouseLocation.y))
-        plus.move(to: NSPoint(x: mouseLocation.x, y: mouseLocation.y - armLength))
-        plus.line(to: NSPoint(x: mouseLocation.x, y: mouseLocation.y + armLength))
-        plus.stroke()
-
-        NSGraphicsContext.restoreGraphicsState()
-
-        // let circleRect = NSRect(x: mouseLocation.x - radius, y: mouseLocation.y - radius, width: radius * 2, height: radius * 2)
-        // let circle = NSBezierPath(ovalIn: circleRect)
-        // NSColor.white.setFill()
-        // circle.fill()
-        // circle.lineWidth = 1.5
-        // circle.stroke()
-    }
-
-    /// Shows the pointer's screen-pixel coordinates stacked below the reticle, mirroring macOS's own screenshot tool.
+    /// Shows the pointer's screen-pixel coordinates stacked below the cursor, mirroring macOS's own screenshot tool.
     private func drawCoordinateNumbers() {
         guard let screen = window?.screen else { return }
         let globalAppKitPoint = NSPoint(x: screen.frame.origin.x + mouseLocation.x, y: screen.frame.origin.y + mouseLocation.y)
@@ -179,12 +190,14 @@ final class SelectionOverlayView: NSView {
             updateHoveredWindow(at: event.locationInWindow)
             return
         }
+        Self.cursor.set()
         dragStart = convert(event.locationInWindow, from: nil)
         currentRect = .zero
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard !isWindowMode, let start = dragStart else { return }
+        Self.cursor.set()   // drags get no cursor updates, so a lost one would stay lost
         let point = convert(event.locationInWindow, from: nil)
         mouseLocation = point
         currentRect = NSRect(

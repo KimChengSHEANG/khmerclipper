@@ -14,6 +14,7 @@ final class CaptureCoordinator {
     private let historyStore: ScanHistoryStore
     private var hudWindowController: HUDWindowController?
     private var recognitionTask: Task<Void, Never>?
+    private var activationObserver: NSObjectProtocol?
 
     /// Drives the bottom-of-screen progress box; nil means idle (tear down).
     /// Only TrOCR reports phases -- Tesseract runs fast enough not to need it.
@@ -36,6 +37,9 @@ final class CaptureCoordinator {
         if mode == .text, preferences.ocrEngine == .trocr {
             Task.detached { await TrOCREngine.preload(model: .khmer) }
         }
+        // Activate before ordering the overlays in: until the app is active its windows can't
+        // become key, so the capture cursor and Esc would only work after a visible delay.
+        NSApp.activate()
         for screen in NSScreen.screens {
             let window = SelectionOverlayWindow(screen: screen)
             let view = SelectionOverlayView(frame: screen.frame)
@@ -43,19 +47,37 @@ final class CaptureCoordinator {
                 self?.finishSelection(rect: rect, screen: screen, mode: mode, saveFixture: saveFixture)
             }
             window.contentView = view
-            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
             let locationInWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
             view.primeMouseLocation(locationInWindow)
             overlayWindows.append(window)
         }
-        NSApp.activate(ignoringOtherApps: true)
-        NSCursor.hide()
+        // The overlay under the pointer takes the keyboard and sets the cursor right away.
+        let mouse = NSEvent.mouseLocation
+        let target = overlayWindows.first { $0.frame.contains(mouse) } ?? overlayWindows.first
+        target?.makeKey()
+        SelectionOverlayView.cursor.set()
+        // Activation can land after this (another app was frontmost); the active app's cursor
+        // then wins until we set ours again, so take the key window and cursor once more.
+        if !NSApp.isActive {
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, !self.overlayWindows.isEmpty else { return }
+                    target?.makeKey()
+                    SelectionOverlayView.cursor.set()
+                }
+            }
+        }
     }
 
     private func finishSelection(rect: CGRect?, screen: NSScreen, mode: CaptureMode, saveFixture: Bool = false) {
-        NSCursor.unhide()
         overlayWindows.forEach { $0.orderOut(nil) }
         overlayWindows.removeAll()
+        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
+        activationObserver = nil
+        NSCursor.arrow.set()   // the app stays active with no windows, so drop the reticle now
 
         guard let rect else { return }
         if preferences.playCaptureSound {
