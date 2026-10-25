@@ -28,6 +28,7 @@ def test_handle_text_copies_records_and_shows(controller):
     assert controller.copied == ["ក  \nខ"]
     assert controller.history.records[0].text == "ក  \nខ"
     assert controller.popup.isVisible() and controller.popup.label.text() == "ក  \nខ"
+    assert controller.popup.title.text() == "Copied"
 
 
 def test_handle_text_respects_prefs(controller):
@@ -43,7 +44,7 @@ def test_handle_text_respects_prefs(controller):
 def test_empty_result_is_not_recorded(controller):
     controller.handle_text("  \n ")
     assert controller.history.records == []
-    assert controller.popup.label.text() == "No text found"
+    assert controller.popup.kind == "notext" and controller.popup.title.text() == "No text found"
 
 
 def test_errors(controller):
@@ -51,6 +52,7 @@ def test_errors(controller):
     assert not controller.popup.isVisible()
     controller.handle_error(KhmerClipperError("Tesseract was not found."))
     assert "Tesseract was not found." in controller.popup.label.text()
+    assert controller.popup.kind == "error" and controller.popup.feedback_button.isVisibleTo(controller.popup)
 
 
 def test_run_ocr_end_to_end_off_thread(controller, qtbot, monkeypatch):
@@ -159,11 +161,10 @@ def test_unexpected_error_is_recorded(controller, monkeypatch):
 
 
 def test_error_popup_shows_even_if_recording_fails(controller, monkeypatch):
-    shown = []
     monkeypatch.setattr(app_module.crash, "record", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
-    monkeypatch.setattr(controller.popup, "show_message", shown.append)
     controller.handle_error(ZeroDivisionError())
-    assert len(shown) == 1 and "Capture failed" in shown[0]
+    assert controller.popup.title.text() == "Capture failed" and "ZeroDivisionError" in controller.popup.label.text()
+    assert "crash report" not in controller.popup.label.text()  # recording failed, so don't promise one
 
 
 def test_safe_flush_swallows_errors(monkeypatch):
@@ -181,9 +182,7 @@ def test_report_send_failure_tells_the_user(controller, monkeypatch, error):
     tray = TrayApp(controller)
     controller.handle_text("ក", image=Image.new("RGB", (20, 20), "white"))
     record = controller.history.records[0]
-    shown = []
-    monkeypatch.setattr(controller.popup, "show_message", shown.append)
     monkeypatch.setattr(app_module.reports, "capture_payload", lambda *a, **k: (_ for _ in ()).throw(error))
     with pytest.raises(type(error)):  # the History window must not mark the row Reported
         tray._report(record, "")
-    assert shown == ["Couldn't save the report. Please try again."]
+    assert controller.popup.title.text() == "Couldn't save the report"

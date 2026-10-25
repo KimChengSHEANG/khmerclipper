@@ -8,7 +8,7 @@ from functools import partial
 
 from PySide6.QtCore import QObject, QThreadPool, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication, QIcon
-from PySide6.QtWidgets import QApplication, QDialog, QMenu, QMessageBox, QProgressDialog, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QDialog, QMenu, QMessageBox, QSystemTrayIcon
 
 from khmerclipper import __version__, autostart, crash, reports, updater
 from khmerclipper.capture import portal
@@ -27,10 +27,11 @@ from khmerclipper.ui.history_window import HistoryWindow
 from khmerclipper.ui.image_window import ImageOCRWindow
 from khmerclipper.ui.popup import ResultPopup
 from khmerclipper.ui.prefs_window import PrefsWindow
+from khmerclipper.ui.progress_panel import ProgressPanel
 from khmerclipper.ui.worker import Task
 
 
-def _update_progress(dialog: QProgressDialog, value: object) -> None:
+def _update_progress(dialog: ProgressPanel, value: object) -> None:
     if isinstance(value, tuple):  # (bytes_done, bytes_total) from a download
         done, total = value
         dialog.setValue(int(done * 1000 / max(1, total)))
@@ -158,7 +159,7 @@ class Controller(QObject):
 
     def handle_text(self, text: str, kind: str = "text", image=None) -> None:
         if not text.strip():
-            self.popup.show_message("No text found")
+            self.popup.show_no_text()
             return
         formatted = apply(text, self.prefs.preserve_linebreaks)
         if self.prefs.auto_copy:
@@ -169,7 +170,7 @@ class Controller(QObject):
         else:
             self.history.add(record)
         if self.prefs.show_result:
-            self.popup.show_text(formatted)
+            self.popup.show_text(formatted, copied=self.prefs.auto_copy)
 
     def _capture_meta(self, text: str, record: ScanRecord) -> dict:
         meta = {"ocr_text": text, "engine": self.prefs.engine, "app_version": __version__,
@@ -181,32 +182,27 @@ class Controller(QObject):
     def handle_error(self, error: BaseException) -> None:
         if isinstance(error, Cancelled):
             return
+        reported = False
         if isinstance(error, KhmerClipperError):
             message = str(error)
         else:
             message = f"Unexpected error: {error!r}"
             if self.prefs.send_crash_reports:
                 try:
-                    crash.record(error, self.prefs.engine)
+                    reported = crash.record(error, self.prefs.engine) is not None
                 except Exception:  # a reporting failure must not hide the popup
                     pass
-        self.popup.show_message(f"Capture failed: {message}")
+        self.popup.show_error(message, reported=reported)
 
     def copy(self, text: str) -> None:
         self._set_clipboard(text)
 
     # --- background work -----------------------------------------------------
-    def _progress_dialog(self, label: str, maximum: int = 0) -> QProgressDialog:
-        dialog = QProgressDialog(label, "Cancel", 0, maximum)
-        dialog.setWindowTitle(APP_NAME)
-        dialog.setMinimumDuration(400)  # quick Tesseract runs never flash a dialog
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.setValue(0)
-        return dialog
+    def _progress_dialog(self, label: str, maximum: int = 0) -> ProgressPanel:
+        return ProgressPanel(label, maximum)
 
     def submit(self, fn, on_done: Callable[[object], None] | None = None,
-               dialog: QProgressDialog | None = None) -> Task:
+               dialog: ProgressPanel | None = None) -> Task:
         task = Task(fn)
 
         def finish() -> None:
@@ -269,6 +265,7 @@ class TrayApp(QObject):
         self.tray.setContextMenu(self.menu)
         self.tray.activated.connect(self._on_activated)
         self.tray.show()
+        controller.popup.feedback_requested.connect(self.show_feedback)
 
         self.hotkey_ok = self.register_hotkey()
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -326,7 +323,7 @@ class TrayApp(QObject):
             pass  # already told the user
 
     def _report_save_failed(self) -> None:
-        self.c.popup.show_message("Couldn't save the report. Please try again.")
+        self.c.popup.show_error("Please try again.", title="Couldn't save the report")
 
     def _queue_and_send(self, payload: dict) -> None:
         try:
@@ -351,12 +348,12 @@ class TrayApp(QObject):
         if self.image_window is None:
             self.image_window = ImageOCRWindow()
             self.image_window.image_chosen.connect(self.c.run_ocr)
-            self.image_window.failed.connect(self.c.popup.show_message)
+            self.image_window.failed.connect(lambda message: self.c.popup.show_error(message, title="Couldn't open the image"))
         _present(self.image_window)
 
     def _pref_changed(self, name: str) -> None:
         if name == "hotkey" and not self.register_hotkey():
-            self.c.popup.show_message("That shortcut couldn't be registered. Try another one.")
+            self.c.popup.show_error("Try another one.", title="That shortcut couldn't be registered")
         elif name == "keep_captures" and not self.c.prefs.keep_captures:
             self.c.history.purge_captures()
             if self.history_window is not None:
@@ -365,7 +362,7 @@ class TrayApp(QObject):
             try:
                 autostart.set_enabled(self.c.prefs.launch_at_login)
             except (OSError, NotImplementedError) as e:
-                self.c.popup.show_message(f"Couldn't change launch at login: {e}")
+                self.c.popup.show_error(str(e), title="Couldn't change launch at login")
 
     def check_updates(self, manual: bool) -> None:
         def fetch(progress, cancel):

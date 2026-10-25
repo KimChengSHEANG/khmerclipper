@@ -11,6 +11,7 @@ from khmerclipper.ui.fonts import khmer_font
 from khmerclipper.ui.history_window import HistoryWindow
 from khmerclipper.ui.image_window import ImageOCRWindow
 from khmerclipper.ui.popup import ResultPopup
+from khmerclipper.ui.progress_panel import ProgressPanel
 from khmerclipper.ui.report_dialog import ReportDialog
 from khmerclipper.ui.prefs_window import WAYLAND_HINT, PrefsWindow
 from khmerclipper.ui.worker import Task
@@ -51,6 +52,38 @@ def test_popup_shows_plain_text_and_copies_full_text(qtbot):
     with qtbot.waitSignal(popup.copy_requested) as blocker:
         popup.copy_button.click()
     assert blocker.args == [long_text]
+
+
+def test_popup_states(qtbot):
+    popup = ResultPopup()
+    qtbot.addWidget(popup)
+    popup.show_text("ក", copied=False)
+    assert popup.title.text() == "Done" and popup.copy_button.isVisibleTo(popup)
+    with qtbot.waitSignal(popup.copy_requested):
+        popup.copy_button.click()
+    assert popup.copy_button.text() == "Copied ✓"   # the click says it worked
+    qtbot.waitUntil(lambda: popup.copy_button.text() == "Copy", timeout=3000)
+    popup.show_error("boom", reported=True)
+    assert popup.title.text() == "Capture failed" and "crash report" in popup.label.text()
+    assert popup.feedback_button.isVisibleTo(popup) and not popup.copy_button.isVisibleTo(popup)
+    with qtbot.waitSignal(popup.feedback_requested):
+        popup.feedback_button.click()
+    popup.show_no_text()
+    assert popup.kind == "notext" and not popup.feedback_button.isVisibleTo(popup)
+
+
+def test_progress_panel_waits_before_showing(qtbot):
+    quick = ProgressPanel("Reading text…")
+    qtbot.addWidget(quick)
+    quick.close()  # finished within the delay
+    qtbot.wait(ProgressPanel.SHOW_DELAY_MS + 100)
+    assert not quick.isVisible()
+    slow = ProgressPanel("Reading text…")
+    qtbot.addWidget(slow)
+    qtbot.waitUntil(slow.isVisible, timeout=2000)
+    with qtbot.waitSignal(slow.canceled):
+        slow.cancel_button.click()
+    assert slow.label.text() == "Cancelling…" and not slow.cancel_button.isEnabled()
 
 
 def test_popup_message_hides_copy(qtbot):
