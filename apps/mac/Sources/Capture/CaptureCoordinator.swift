@@ -109,7 +109,7 @@ final class CaptureCoordinator {
     private func handleResult(text: String, kind: ScanRecord.Kind,
                               image: CGImage? = nil, engine: OCREngineKind? = nil) async {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            hudWindowController = HUDWindowController.showMessage("No text found")
+            hudWindowController = HUDWindowController.show(.noText)
             return
         }
         let formatted = OCRTextFormatter.apply(text, preserveLinebreaks: preferences.preserveLinebreaks)
@@ -129,12 +129,12 @@ final class CaptureCoordinator {
             historyStore.add(record)
         }
         if preferences.showResultHUD {
-            hudWindowController = HUDWindowController.showResult(text: formatted)
+            hudWindowController = HUDWindowController.show(preferences.autoCopyToClipboard ? .copied(preview: formatted) : .ready(text: formatted))
         }
     }
 
     private func handleFailure(_ error: Error) async {
-        hudWindowController = HUDWindowController.showMessage("Capture failed: \(error.localizedDescription)")
+        hudWindowController = HUDWindowController.show(.error(message: error.localizedDescription))
     }
 
     /// Dev-only: dumps the capture plus its OCR text into the repo's OCR fixtures
