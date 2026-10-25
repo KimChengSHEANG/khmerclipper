@@ -23,11 +23,20 @@ final class OCRProgressController: NSWindowController {
             let controller = OCRProgressController(onCancel: onCancel)
             current = controller
             controller.model.info = info
-            controller.window?.center()   // re-centered after content sizing settles below
-            controller.window?.orderFrontRegardless()
-            // preferredContentSize resizes on the next runloop tick; re-center once it has.
-            DispatchQueue.main.async { controller.window?.center() }
+            // Fast scans (most of them, ~100 ms) finish before this and never flash the box.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard current === controller else { return }
+                controller.place()
+                controller.window?.orderFrontRegardless()
+            }
         }
+    }
+
+    /// Bottom-centre of the screen, clear of the area the user just selected.
+    private func place() {
+        guard let window, let screen = NSScreen.main else { return }
+        let area = screen.visibleFrame
+        window.setFrameOrigin(NSPoint(x: area.midX - window.frame.width / 2, y: area.minY + 80))
     }
 
     private init(onCancel: @escaping () -> Void) {

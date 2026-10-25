@@ -87,7 +87,7 @@ final class CaptureCoordinator {
         switch mode {
         case .text:
             defer { onOCRProgress?(nil) }
-            onOCRProgress?(.preparing)   // box shows instantly, before model/encoder work
+            onOCRProgress?(.preparing)   // box appears if this is still running after 0.4 s
             let text = try await OCRDispatcher.recognizeText(
                 in: image,
                 engine: preferences.ocrEngine,
