@@ -7,7 +7,7 @@ PySide6. The macOS app lives in [`../mac`](../mac) and is separate.
 
 - Region capture: Windows and X11 use a frozen-screenshot overlay. Wayland uses the desktop's own screenshot picker (xdg-desktop-portal).
 - OCR engines (Preferences):
-  - **TrOCR** (Khmer fine-tune, ONNX): the default. The model (about 1.5 GB, from Hugging Face) downloads in the background the first time the app opens; capture is available once it finishes.
+  - **TrOCR** (Khmer fine-tune, ONNX): the default. The model (about 670 MB, from Hugging Face) downloads in the background the first time the app opens; capture is available once it finishes.
   - **Tesseract** (`khm+eng`, bundled): works offline with no setup.
 - Auto-copy, result popup, history (last 200), OCR Image File…, launch at login, daily update check.
 - Global hotkey (default `Ctrl+Shift+2`) on Windows and X11. **Wayland:** add a custom shortcut in your desktop's keyboard settings that runs `khmerclipper --capture` (for the AppImage: `/path/to/KhmerClipper-x.y.z-x86_64.AppImage --capture`).

@@ -45,7 +45,7 @@ Get the latest build from the [Releases](https://github.com/KimChengSHEANG/khmer
 - **Windows:** run `KhmerClipper-<ver>-windows-x64-setup.exe`. SmartScreen warns on first run: More info → Run anyway.
 - **Linux:** on Ubuntu/Debian, `sudo apt install ./khmerclipper_<ver>_amd64.deb`. Otherwise, `chmod +x KhmerClipper-<ver>-x86_64.AppImage`, then run it. On Wayland, bind a desktop shortcut to `KhmerClipper-…AppImage --capture`. GNOME needs the AppIndicator extension for the tray icon.
 
-The Windows/Linux TrOCR model (~1.3 GB) downloads on first use from [`kcsheang/khmerclipper-trocr-khmer-onnx`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx). The app checks it against a pinned commit and SHA-256.
+The Windows/Linux TrOCR model (~670 MB) downloads on first use from [`kcsheang/khmerclipper-trocr-khmer-onnx`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx). The app checks it against a pinned commit and SHA-256.
 
 ## Results
 

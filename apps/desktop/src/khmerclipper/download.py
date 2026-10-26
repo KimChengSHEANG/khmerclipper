@@ -30,7 +30,7 @@ def sha256_file(path: Path) -> str:
 
 def is_present(files: Sequence[RemoteFile], dest_dir: Path) -> bool:
     # ponytail: size check only; files are SHA-verified before the rename that installs them,
-    # so hashing ~1.3 GB again on every launch buys nothing.
+    # so hashing ~670 MB again on every launch buys nothing.
     return all((dest_dir / f.name).is_file() and (dest_dir / f.name).stat().st_size == f.size for f in files)
 
 
