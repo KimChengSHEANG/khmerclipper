@@ -219,7 +219,7 @@ def _ink_rows(image: Image.Image, bg) -> np.ndarray:
 
 def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], fonts: list[FontInfo],
                          rng: random.Random, sizes: tuple[int, int] = (11, 24), dark: float = 0.3,
-                         bold: float = 0.0):
+                         bold: float = 0.0, busy: float = 0.0):
     """One line cut from a rendered screen paragraph, the way the app's line splitter cuts it.
 
     Screens set Khmer at 11-24 px with tight line heights, so the previous / next line's
@@ -229,7 +229,9 @@ def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], f
     ``None`` when no text font covers every line.
 
     sizes / dark / bold steer the style mix (v4 targets small, dark and bold text, where v3 errs
-    most); bold is a 1px stroke at >= 20 px. The defaults draw exactly what v3's synth_screen drew."""
+    most); bold is a 1px stroke at >= 20 px. busy is the share set on a photo / gradient /
+    texture panel instead of a flat one (v5, see busy_background). The defaults draw exactly what
+    v3's synth_screen drew."""
     lines = [t for t in (neighbours[0], text, neighbours[1]) if t]
     usable = [f for f in fonts if f.kind in ("text", "italic") and all(covers(f, t) for t in lines)]
     if not usable:
@@ -270,8 +272,71 @@ def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], f
     cut_bottom = (valley(y_mid, baselines[mid + 1] - ascent // 2) if has_next
                   else min(height, int(ys[-1]) + 1 + rng.randint(1, 8)))
     image = image.crop((0, cut_top, width, cut_bottom))
+    if busy and rng.random() < busy:
+        image, style = _on_busy_background(image, fg, bg, rng)
     italic = font.kind == "italic"
     return image, {"font": font.path.name, "kind": font.kind, "style": style, "italic": italic}
+
+
+BUSY_KINDS = ("gradient", "blobs", "fractal", "scene")
+
+
+def busy_background(width: int, height: int, rng: random.Random, kind: str | None = None) -> np.ndarray:
+    """A float RGB panel (h, w, 3) like the photos, gradients and textures text sits on in apps.
+
+    Generated, never real photos. Deliberately unlike training/eval's noisy fixtures (two-colour
+    CSS gradients and one blurred-noise texture): 3-4 colour stops, blurred shapes, multi-octave
+    noise and a two-region "scene", each with optional film grain."""
+    kind = kind or rng.choice(BUSY_KINDS)
+    nprng = np.random.default_rng(rng.randrange(2**32))
+    palette = nprng.uniform(0, 255, (4, 3))
+    ys, xs = np.mgrid[0:height, 0:width].astype(np.float32)
+    if kind == "gradient":
+        a = rng.uniform(0, math.pi)
+        t = xs * math.cos(a) + ys * math.sin(a)
+        t = (t - t.min()) / max(1e-6, np.ptp(t))
+        stops = np.sort(nprng.uniform(0, 1, rng.randint(3, 4)))
+        stops[0], stops[-1] = 0.0, 1.0
+        panel = np.stack([np.interp(t, stops, palette[: len(stops), c]) for c in range(3)], axis=-1)
+    elif kind == "fractal":
+        t = np.zeros((height, width), np.float32)
+        for octave in range(rng.randint(3, 5)):
+            cells = 2 + 2 ** octave
+            grid = Image.fromarray(nprng.random((cells, cells * max(1, width // max(1, height)))).astype(np.float32))
+            t += np.asarray(grid.resize((width, height), Image.BILINEAR)) / 2 ** octave
+        t = (t - t.min()) / max(1e-6, np.ptp(t))
+        panel = np.stack([np.interp(t, [0, 0.5, 1], palette[:3, c]) for c in range(3)], axis=-1)
+    else:
+        img = Image.new("RGB", (width, height), tuple(int(v) for v in palette[0]))
+        draw = ImageDraw.Draw(img)
+        if kind == "scene":  # sky / ground, or a wall and a floor, split at a tilted line
+            y0, y1 = rng.uniform(0, height), rng.uniform(0, height)
+            draw.polygon([(0, y0), (width, y1), (width, height), (0, height)], fill=tuple(int(v) for v in palette[1]))
+        for _ in range(rng.randint(4, 16) if kind == "blobs" else rng.randint(1, 5)):
+            r = rng.uniform(0.2, 1.2) * height
+            cx, cy = rng.uniform(0, width), rng.uniform(0, height)
+            draw.ellipse((cx - r, cy - r * rng.uniform(0.5, 1.5), cx + r, cy + r), fill=tuple(nprng.integers(0, 256, 3).tolist()))
+        panel = np.asarray(img.filter(ImageFilter.GaussianBlur(rng.uniform(1, max(1.5, height / 3)))), np.float32)
+    if rng.random() < 0.5:
+        panel = panel + nprng.normal(0, rng.uniform(3, 14), panel.shape)
+    return np.clip(panel, 0, 255)
+
+
+def _on_busy_background(image: Image.Image, fg, bg, rng: random.Random):
+    """Move the rendered glyphs (anti-aliasing kept as alpha) onto a busy_background panel, in
+    black or white, whichever stands out more from the panel under the text."""
+    px = np.asarray(image, np.float32)
+    span = max(1.0, float(np.abs(np.array(fg, np.float32) - np.array(bg, np.float32)).max()))
+    alpha = np.clip(np.abs(px - np.array(bg, np.float32)).max(axis=2, keepdims=True) / span, 0, 1)
+    panel = busy_background(image.width, image.height, rng)
+    lum = float((panel.mean(axis=2, keepdims=True) * alpha).sum() / max(1.0, float(alpha.sum())))
+    ink = np.full(3, rng.randint(0, 50) if lum > 128 else rng.randint(215, 255), np.float32)
+    # Unreadable strips would teach the model to guess: fade a panel too close to the ink away from it.
+    under = np.abs(panel.mean(axis=2, keepdims=True) - ink[0])
+    if float((under * alpha).sum() / max(1.0, float(alpha.sum()))) < 110:
+        panel = panel * 0.55 + (255.0 if ink[0] < 128 else 0.0) * 0.45
+    out = panel * (1 - alpha) + ink * alpha
+    return Image.fromarray(out.astype(np.uint8)), "screen_busy"
 
 
 def _is_khmer(ch: str) -> bool:

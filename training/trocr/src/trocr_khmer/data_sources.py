@@ -72,6 +72,8 @@ DATASET_REGISTRY = {
     "synth_screen_val": DatasetSpec("parquet", data_files=["cache/synth_screen/val/*.parquet"]),
     # v4: screen strips aimed at v3's weak slices (small, dark, bold, ':' next to Khmer)
     "synth_screen_v4": DatasetSpec("parquet", data_files=["cache/synth_screen_v4/train/*/*.parquet"]),
+    # v5: screen strips on photo / gradient / texture panels (v3 invents text on busy backgrounds)
+    "synth_screen_bg": DatasetSpec("parquet", data_files=["cache/synth_screen_bg/train/*/*.parquet"]),
     # LazyGreed/khmer_img2txt_200K (MIT) minus rows sharing text with eval fixtures (scripts/filter_source.py).
     "lazygreed": DatasetSpec("parquet", data_files=["cache/lazygreed/train/*.parquet"]),
 }

@@ -138,5 +138,22 @@ def test_render_screen_sample_style_knobs():
     assert ink(bold) > ink(thin)
 
 
+@needs_raqm
+def test_render_screen_sample_busy_background():
+    fonts = [font_info(NOTO, "text")]
+    args = ("ភាសាខ្មែរ ២០២៤", (None, None), fonts)
+    plain, _ = synth.render_screen_sample(*args, random.Random(5))
+    busy, meta = synth.render_screen_sample(*args, random.Random(5), busy=1.0)
+    again, _ = synth.render_screen_sample(*args, random.Random(5), busy=1.0)
+    assert meta["style"] == "screen_busy" and busy.tobytes() == again.tobytes()
+    assert busy.size == plain.size  # same strip, only the panel changes
+    # Not a flat panel any more, and the glyphs still stand out from it.
+    px = np.asarray(busy.convert("L"), np.float32)
+    assert px.std() > np.asarray(plain.convert("L"), np.float32).std() * 0.3 and np.ptp(px) > 120
+    for kind in synth.BUSY_KINDS:
+        panel = synth.busy_background(64, 20, random.Random(1), kind)
+        assert panel.shape == (20, 64, 3) and panel.std() > 1
+
+
 def test_render_screen_sample_skips_uncovered_text():
     assert synth.render_screen_sample("ក\U0001F600", (None, None), [font_info(NOTO, "text")], random.Random(0)) is None

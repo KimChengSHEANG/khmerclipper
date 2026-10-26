@@ -93,6 +93,8 @@ def main() -> None:
     p.add_argument("--screen_sizes", type=int, nargs=2, default=(11, 24), help="--screen px range")
     p.add_argument("--screen_dark", type=float, default=0.3, help="--screen share of dark panels")
     p.add_argument("--screen_bold", type=float, default=0.0, help="--screen share drawn bold")
+    p.add_argument("--screen_busy", type=float, default=0.0,
+                   help="--screen share set on photo / gradient / texture panels (v5)")
     p.add_argument("--colon_prefix", type=float, default=0.0,
                    help="share of lines prefixed with a time or number and ':' (v3 read ':' as Khmer U+17C8)")
     args = p.parse_args()
@@ -130,7 +132,7 @@ def main() -> None:
             # Neighbour lines exist ~75% of the time (strips at a clip's top / bottom edge have none).
             near = tuple(corpus[rng.randrange(len(corpus))] if rng.random() < 0.75 else None for _ in range(2))
             sample = render_screen_sample(text, near, fonts, rng, sizes=tuple(args.screen_sizes),
-                                          dark=args.screen_dark, bold=args.screen_bold)
+                                          dark=args.screen_dark, bold=args.screen_bold, busy=args.screen_busy)
         else:
             sample = render_sample(text, fonts, rng)
         if sample is None:
