@@ -218,22 +218,28 @@ def _ink_rows(image: Image.Image, bg) -> np.ndarray:
 
 
 def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], fonts: list[FontInfo],
-                         rng: random.Random):
+                         rng: random.Random, sizes: tuple[int, int] = (11, 24), dark: float = 0.3,
+                         bold: float = 0.0):
     """One line cut from a rendered screen paragraph, the way the app's line splitter cuts it.
 
     Screens set Khmer at 11-24 px with tight line heights, so the previous / next line's
     subscripts and above-marks reach into the strip, and the strip spans the whole clip width.
     Renders up to three lines (``neighbours`` = text above / below, or None) at 1x or 2x and
     cuts the middle one at the sparsest ink row between baselines. Returns ``(image, meta)``, or
-    ``None`` when no text font covers every line."""
+    ``None`` when no text font covers every line.
+
+    sizes / dark / bold steer the style mix (v4 targets small, dark and bold text, where v3 errs
+    most); bold is a 1px stroke at >= 20 px. The defaults draw exactly what v3's synth_screen drew."""
     lines = [t for t in (neighbours[0], text, neighbours[1]) if t]
     usable = [f for f in fonts if f.kind in ("text", "italic") and all(covers(f, t) for t in lines)]
     if not usable:
         return None
     font = rng.choice(usable)
-    style = rng.choices(["screen_light", "screen_dark"], weights=[0.7, 0.3])[0]
+    style = rng.choices(["screen_light", "screen_dark"], weights=[1 - dark, dark])[0]
     fg, bg = _colors("ui_dark" if style == "screen_dark" else "ui_light", rng)
-    size = rng.randint(11, 24) * rng.choice([1, 2])
+    size = rng.randint(*sizes) * rng.choice([1, 2])
+    # A 1px stroke only reads as bold from ~20 px (2x); below that it smears the glyphs shut.
+    stroke = 1 if bold and size >= 20 and rng.random() < bold else 0
     pitch = int(size * rng.uniform(1.25, 1.8))
     face = ImageFont.truetype(str(font.path), size, layout_engine=ImageFont.Layout.RAQM)
     ascent, descent = face.getmetrics()
@@ -247,7 +253,7 @@ def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], f
     draw = ImageDraw.Draw(image)
     baselines = [top + ascent + k * pitch for k in range(len(lines))]
     for t, y in zip(lines, baselines):
-        draw.text((pad_x, y), t, font=face, fill=fg, anchor="ls")
+        draw.text((pad_x, y), t, font=face, fill=fg, anchor="ls", stroke_width=stroke, stroke_fill=fg)
     rows = _ink_rows(image, bg)
     mid = lines.index(text) if neighbours[0] is None else 1
     ys = np.nonzero(rows)[0]

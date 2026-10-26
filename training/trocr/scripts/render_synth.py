@@ -90,6 +90,11 @@ def main() -> None:
     p.add_argument("--latin_only", action="store_true", help="keep only Latin-only lines; vary their case")
     p.add_argument("--screen", action="store_true",
                    help="screen strips: 11-24px (1x/2x) text fonts cut from a tight paragraph (render_screen_sample)")
+    p.add_argument("--screen_sizes", type=int, nargs=2, default=(11, 24), help="--screen px range")
+    p.add_argument("--screen_dark", type=float, default=0.3, help="--screen share of dark panels")
+    p.add_argument("--screen_bold", type=float, default=0.0, help="--screen share drawn bold")
+    p.add_argument("--colon_prefix", type=float, default=0.0,
+                   help="share of lines prefixed with a time or number and ':' (v3 read ':' as Khmer U+17C8)")
     args = p.parse_args()
 
     require_raqm()
@@ -119,10 +124,13 @@ def main() -> None:
         tried += 1
         if args.latin_only:
             text = augment_case(text, rng)
+        if args.colon_prefix and rng.random() < args.colon_prefix:
+            text = colon_prefix(rng) + text
         if args.screen:
             # Neighbour lines exist ~75% of the time (strips at a clip's top / bottom edge have none).
             near = tuple(corpus[rng.randrange(len(corpus))] if rng.random() < 0.75 else None for _ in range(2))
-            sample = render_screen_sample(text, near, fonts, rng)
+            sample = render_screen_sample(text, near, fonts, rng, sizes=tuple(args.screen_sizes),
+                                          dark=args.screen_dark, bold=args.screen_bold)
         else:
             sample = render_sample(text, fonts, rng)
         if sample is None:
@@ -140,6 +148,16 @@ def main() -> None:
             print(f"  shard {shard}: {made}/{args.count}")
             shard += 1
             rows = defaultdict(list)
+
+
+def colon_prefix(rng: random.Random) -> str:
+    """'08:30 ', '1: ' or '12:05:' style lead-ins: Latin colons next to Khmer text."""
+    kind = rng.randrange(3)
+    if kind == 0:
+        return f"{rng.randrange(24):02d}:{rng.randrange(60):02d} "
+    if kind == 1:
+        return f"{rng.randrange(1, 100)}: "
+    return f"{rng.randrange(1, 13)}:{rng.randrange(60):02d}:"
 
 
 if __name__ == "__main__":

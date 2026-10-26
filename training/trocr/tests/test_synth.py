@@ -1,3 +1,4 @@
+import numpy as np
 import random
 from pathlib import Path
 
@@ -118,6 +119,23 @@ def test_render_screen_sample_is_a_deterministic_strip():
     alone, _ = synth.render_screen_sample("ភាសាខ្មែរ ២០២៤", (None, None), fonts, random.Random(3))
     # A strip holds one line: never as tall as two line pitches.
     assert a.height < 2 * alone.height + 8
+
+
+@needs_raqm
+def test_render_screen_sample_style_knobs():
+    fonts = [font_info(NOTO, "text")]
+    args = ("ភាសាខ្មែរ ២០២៤", (None, None), fonts)
+    # Default knobs draw exactly what v3 drew (no extra rng draws).
+    plain, _ = synth.render_screen_sample(*args, random.Random(5))
+    same, _ = synth.render_screen_sample(*args, random.Random(5), sizes=(11, 24), dark=0.3, bold=0.0)
+    assert plain.tobytes() == same.tobytes()
+    # Forced dark, small and bold: dark style, a short strip, heavier ink than the same strip thin.
+    _, meta = synth.render_screen_sample(*args, random.Random(5), sizes=(11, 11), dark=1.0)
+    assert meta["style"] == "screen_dark"
+    thin, _ = synth.render_screen_sample(*args, random.Random(7), sizes=(20, 20), dark=0.0)
+    bold, _ = synth.render_screen_sample(*args, random.Random(7), sizes=(20, 20), dark=0.0, bold=1.0)
+    ink = lambda im: int((np.asarray(im.convert("L")) < 128).sum())
+    assert ink(bold) > ink(thin)
 
 
 def test_render_screen_sample_skips_uncovered_text():

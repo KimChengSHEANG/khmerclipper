@@ -96,3 +96,17 @@ On device (CoreML, `OCRBench`), v3b vs v2 with the same app changes: frozen CER 
 - Segmentation: 7 of 68 two-line screen clips came out as one strip because `linePitch` found no autocorrelation peak (the wrapped second line is often short). Strips now correct on 445 of 450 screen clips (was 439), still 200/200 frozen and 319/320 slices.
 - Capture resolution: `SCDisplay.width` is in points, so Retina captures were taken at 1x. Paired on the 225 2x screen clips, downscaling to 1x gives CER 0.0232 vs 0.0199 at 2x. The app now captures the selection at the screen's backing scale.
 - Residual errors (screen + slices, excluding ្ដ/្ត and deprecated-character label noise): CER 0.0178. Worst slices: font Khmer MN 0.0273, size <= 13 px 0.0244, bold 0.0228, dark 0.0210. Most common confusions are dropped/added vowel signs (ុ, េ, ែ, ើ->ី) and `:` read as `ៈ`. Next training data: more `synth_screen` strips in Khmer MN-like fonts at 11-13 px, bold and dark, and mixed Latin punctuation.
+
+## v4 fine-tune (2026-10-23): dropped
+
+`scripts/run_v4.sh`: from shipped v3 (step 16000), lr 5e-6, 1 epoch (15,884 steps, 2.2 h), adding 160k `synth_screen_v4` strips (10-14 px, half dark, a third faux-bold at >= 20 px, 10% with a Latin `:` lead-in) over a replay of the v3b mix. Gated with the PyTorch app pipeline (split touching + two-line cut + wide split 12 + crop), paired character errors vs v3 in the same run:
+
+| Model | frozen 200 | screen 450 | slices 320 | Verdict |
+|---|---:|---:|---:|---|
+| v3 (step 16000, shipped) | 41 | 737 | 170 | baseline |
+| v4 last (step 15884) | 41 | 732 (-0.7%, 34 / 26) | 172 (+1.2%) | drop: far below the 5% bar |
+| v4 best mid-train (8k) | 42 | 742 (+0.7%) | 179 (+5.3%) | drop |
+
+On the slices v4 targeted (screen + slices, v3 -> v4 last): bold 93 -> 102 (+9.7%), dark 285 -> 294 (+3.2%), size <= 13 px 275 -> 271, Khmer MN 296 -> 283, `:` read as `ៈ` 14 -> 12. More OFL-font synthetic strips in these styles don't move the residual errors; faux-bold likely hurts. The remaining screen errors look font-specific (Khmer MN and other Apple/Khmer OS faces that are eval-only and not redistributable), so the next lever is real captures from users' screens (the app's report/feedback path), not more synthetic data. `eval_english.py` needs macOS fonts and was not run on the box; it was moot after the screen gate.
+
+Box note: `checkpoint-8/final` there is v3's best mid-train step (8k); the shipped model is `checkpoint-8/checkpoint-16000` (assembled with tokenizer files as `experiments/v3_16k`).

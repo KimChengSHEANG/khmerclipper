@@ -70,6 +70,8 @@ DATASET_REGISTRY = {
     # Screen strips cut from tight paragraphs at screen sizes (render_synth.py --screen, v3).
     "synth_screen": DatasetSpec("parquet", data_files=["cache/synth_screen/train/*/*.parquet"]),  # one dir per render process
     "synth_screen_val": DatasetSpec("parquet", data_files=["cache/synth_screen/val/*.parquet"]),
+    # v4: screen strips aimed at v3's weak slices (small, dark, bold, ':' next to Khmer)
+    "synth_screen_v4": DatasetSpec("parquet", data_files=["cache/synth_screen_v4/train/*/*.parquet"]),
     # LazyGreed/khmer_img2txt_200K (MIT) minus rows sharing text with eval fixtures (scripts/filter_source.py).
     "lazygreed": DatasetSpec("parquet", data_files=["cache/lazygreed/train/*.parquet"]),
 }
