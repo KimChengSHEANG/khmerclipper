@@ -76,6 +76,14 @@ DATASET_REGISTRY = {
     "synth_screen_bg": DatasetSpec("parquet", data_files=["cache/synth_screen_bg/train/*/*.parquet"]),
     # v6: handwriting-looking lines (Fasthand / Freehand with pen-like distortion, synth.render_handwriting_sample)
     "synth_hand": DatasetSpec("parquet", data_files=["cache/synth_hand/train/*/*.parquet"]),
+    # v7: renders with the Khmer OS family added (synth.KHMER_OS_FONTS), and real scanned textbook lines
+    # from CADT-IDRI/khmer-sala-ocr-16k (CC BY-NC 4.0; scripts/cadt_lines.py). cadt_test comes from the
+    # dataset's 100 human-verified test pages and is eval only.
+    "synth_v7": DatasetSpec("parquet", data_files=["cache/synth_v7/train/*/*.parquet"]),
+    "synth_screen_v7": DatasetSpec("parquet", data_files=["cache/synth_screen_v7/train/*/*.parquet"]),
+    "synth_hand_v7": DatasetSpec("parquet", data_files=["cache/synth_hand_v7/train/*/*.parquet"]),
+    "cadt": DatasetSpec("parquet", data_files=["cache/cadt/train/*.parquet"]),
+    "cadt_test": DatasetSpec("parquet", data_files=["cache/cadt/test/*.parquet"]),
     # LazyGreed/khmer_img2txt_200K (MIT) minus rows sharing text with eval fixtures (scripts/filter_source.py).
     "lazygreed": DatasetSpec("parquet", data_files=["cache/lazygreed/train/*.parquet"]),
 }

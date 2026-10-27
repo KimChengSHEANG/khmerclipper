@@ -90,7 +90,24 @@ GOOGLE_LATIN_FONTS = {
     "ofl/worksans/WorkSans[wght].ttf": "latin",
     "ofl/raleway/Raleway[wght].ttf": "latin",
 }
-ALL_FONTS = {**GOOGLE_KHMER_FONTS, **GOOGLE_LATIN_FONTS}
+# Khmer OS family (Danh Hong / Open Forum of Cambodia, LGPL-2.1+), the faces most Cambodian documents and
+# sites use. Fetched from Debian's fonts-khmeros (scripts/fetch_fonts.py). Before v7 these were eval-only;
+# the screen / slice eval now keeps Apple's Khmer MN and Khmer Sangam MN as the held-out fonts.
+KHMER_OS_FONTS = {
+    "khmeros/KhmerOS.ttf": "text",
+    "khmeros/KhmerOSbattambang.ttf": "text",
+    "khmeros/KhmerOScontent.ttf": "text",
+    "khmeros/KhmerOSsiemreap.ttf": "text",
+    "khmeros/KhmerOSsys.ttf": "text",
+    "khmeros/KhmerOSbokor.ttf": "display",
+    "khmeros/KhmerOSmetalchrieng.ttf": "display",
+    "khmeros/KhmerOSmuol.ttf": "display",
+    "khmeros/KhmerOSmuollight.ttf": "display",
+    "khmeros/KhmerOSmuolpali.ttf": "display",
+    "khmeros/KhmerOSfasthand.ttf": "handwriting",
+    "khmeros/KhmerOSfreehand.ttf": "handwriting",
+}
+ALL_FONTS = {**GOOGLE_KHMER_FONTS, **KHMER_OS_FONTS, **GOOGLE_LATIN_FONTS}
 
 KIND_WEIGHTS = {"text": 0.55, "handwriting": 0.2, "display": 0.15, "italic": 0.1, "latin": 1.0}
 WIDE_STRIP_P = 0.5  # UI renders: app line strips span the whole clip width
