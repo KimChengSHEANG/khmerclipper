@@ -41,9 +41,11 @@ on 1,300 / 1,300 (boxes within 2 px on 1,250, the existing CoreGraphics vs PIL d
 ## Not solved
 
 - 11 background clips still get the wrong line count (mostly 2-3 lines on a strongly textured panel read as one).
-- A light card inside a white margin (real-003, 4 lines) stays one strip: starting from the margin, the whole card is
-  ink. Starting from the plain window mean finds its lines but breaks dense clean clips; needs a test that tells
-  the two apart.
+- A card inside a white margin (real-003, 4 lines) stays one strip: starting from the margin, the whole card is ink.
+  Tried (2026-10-27): when the local mask leaves one component over half the clip, restart from the plain window
+  mean and keep it if that breaks the panel up. It split real-003 into its 4 lines and changed no other strip
+  count, but on device real-003 already read perfectly as one strip, and the frozen set lost a mark (printed-047,
+  12 -> 13 errors). Dropped: nothing to gain.
 
 ## PyTorch app pipeline (3090), v3, gate5 run vs this change
 
