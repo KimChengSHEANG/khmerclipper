@@ -49,3 +49,12 @@ on 1,300 / 1,300 (boxes within 2 px on 1,250, the existing CoreGraphics vs PIL d
 
 frozen 35 -> 36 (1 / 1), screen 716 = 716, slices 164 = 164, noisy 3208 -> 2370 (-26.1%; background 1438 -> 600,
 -58.3%, 17 better / 1 worse; every other noise kind identical).
+
+## Cut-off lines (noisy_edgecut, CER 0.31): diagnosis, no change
+
+With the right strip count (39 of 50) edge-cut clips still average CER 0.16: a sliver of the cut-off line is
+shorter than 35% of the tallest run, so `merge_marks` folds it into the real line as "marks" and the model reads
+it as extra words. Running `drop_edge_fragments` before the merge as well (edge_first) trimmed several slivers,
+but the right-count tally fell 39 -> 36 (dropping a run changes which runs merge) and 12 of the 30 real captures
+re-split, e.g. real-009, where a nearly whole top line and a sliced bottom line frame one clean line: whether to
+read them depends on what the user meant to select. Reverted; needs labelled real captures to decide.

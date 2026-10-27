@@ -37,3 +37,7 @@ int8 decoder, unbatched (`khmer-v3-kv-int8`, measured before the local-backgroun
 
 Batched texts differ slightly because dynamic int8 quantizes activations with one scale per batch; errors stay
 within the bars. Not shipped until `khmer-v3-kvb-int8` is published to the model repo.
+
+Partial int8 encoders (per channel, batched model, frozen 200 CER, fp32 encoder 0.0031-0.0035): MLP matmuls only
+0.0113 (259 ms), MLP + attention projections of layers 2-9 0.0102 (231 ms). Dropped: any int8 in the ViT encoder
+triples clean-text errors, though it is now 64% of desktop time on screen clips.
