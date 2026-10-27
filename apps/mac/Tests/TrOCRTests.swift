@@ -170,6 +170,43 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(strips.count, 4)
         XCTAssertEqual(strips.map(\.height).reduce(0, +), height)
     }
+
+    /// Mirrors apps/desktop tests/test_preprocess.py gradient_bars: on a gradient the
+    /// corner colour marks most of the clip as ink, so lines are found against a
+    /// local background; a band of 2 px grain above a line is dropped as texture.
+    private func gradientBars(_ rows: [(Int, Int)], grain: Bool = false) throws -> CGImage {
+        let width = 400, height = 200
+        var px = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let t = Double(x) / Double(width - 1), p = (y * width + x) * 4
+                px[p] = UInt8(40 * (1 - t) + 240 * t); px[p + 1] = UInt8(40 * (1 - t) + 200 * t); px[p + 2] = UInt8(200 * (1 - t) + 40 * t)
+            }
+        }
+        func black(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) {
+            for y in y0...y1 { for x in x0...x1 { let p = (y * width + x) * 4; px[p] = 0; px[p + 1] = 0; px[p + 2] = 0 } }
+        }
+        for (top, bottom) in rows { black(20, top, width - 21, bottom) }
+        if grain {
+            var g = SystemRandomNumberGenerator()
+            for _ in 0..<200 { let x = Int.random(in: 20..<380, using: &g), y = Int.random(in: 30..<76, using: &g); black(x, y, x + 1, y + 1) }
+        }
+        let ctx = try XCTUnwrap(CGContext(data: &px, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        return try XCTUnwrap(ctx.makeImage())
+    }
+
+    func testLineStripsFindsLinesOnAGradient() throws {
+        let strips = TrOCREngine.lineStrips(try gradientBars([(30, 60), (120, 150)]))
+        XCTAssertEqual(strips.map(\.height), [90, 110])
+    }
+
+    func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
+        let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
+        XCTAssertEqual(strips.count, 1)
+        XCTAssertLessThan(strips[0].height, 200)
+    }
 }
 
 /// Mirrors training/eval/tests/test_pipeline.py test_split_wide_*.

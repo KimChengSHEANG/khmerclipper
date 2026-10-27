@@ -132,3 +132,30 @@ def test_two_line_cut_splits_a_long_and_a_short_line_but_not_one_line():
     # One line: sparse above-marks, a dense core across the middle, sparse subscripts.
     one = np.array([10.0] * 6 + [100.0] * 10 + [10.0] * 6)
     assert two_line_cut(one) is None
+
+
+def gradient_bars(size, rows):
+    """Black bars on a left-to-right blue-to-orange gradient: the corner colour marks most of it as ink."""
+    w, h = size
+    t = np.linspace(0, 1, w)[None, :, None]
+    px = (np.array([40, 40, 200]) * (1 - t) + np.array([240, 200, 40]) * t).repeat(h, axis=0)
+    img = Image.fromarray(px.astype(np.uint8))
+    draw = ImageDraw.Draw(img)
+    for top, bottom in rows:
+        draw.rectangle((20, top, w - 20, bottom), fill="black")
+    return img
+
+
+def test_line_strips_finds_lines_on_a_gradient():
+    img = gradient_bars((400, 200), [(30, 60), (120, 150)])
+    assert ink_mask(img).busy
+    assert [s.size for s in line_strips(img)] == [(400, 90), (400, 110)]
+
+
+def test_line_strips_drops_a_texture_only_run_on_a_busy_clip():
+    img = gradient_bars((400, 200), [(120, 150)])
+    rng = np.random.default_rng(0)
+    for x, y in zip(rng.integers(20, 380, 200), rng.integers(30, 76, 200)):  # 2 px grain over a line-tall band
+        ImageDraw.Draw(img).rectangle((int(x), int(y), int(x) + 1, int(y) + 1), fill="black")
+    strips = line_strips(img)
+    assert len(strips) == 1 and strips[0].height < 200  # the grain's own strip is gone

@@ -20,6 +20,7 @@ SIZE = 384              # TrOCR ViT input
 class InkMask:
     ink: np.ndarray  # bool, shape (h, w)
     scale: int       # mask coords * scale = full-res coords
+    busy: bool = False  # measured against a local background (see local_ink_mask)
 
 
 def background_color(px: np.ndarray) -> np.ndarray:
@@ -48,7 +49,53 @@ def ink_mask(image: Image.Image, scan_max: int = SCAN_MAX) -> InkMask | None:
         return None
     px = np.asarray(image.convert("RGB").resize((sw, sh), Image.BILINEAR), dtype=np.int32)
     bg = clip_background(px)
-    return InkMask((np.abs(px - bg) > THRESHOLD).any(axis=2), scale)
+    ink = (np.abs(px - bg) > THRESHOLD).any(axis=2)
+    if ink.mean() > BUSY_INK:
+        return InkMask(local_ink_mask(px, ink), scale, busy=True)
+    return InkMask(ink, scale)
+
+
+BUSY_INK = 0.3      # share of "ink" past which one background colour can't describe the clip
+LOCAL_RADIUS = 0.5  # local background window radius, x the clip's short side
+
+
+def box_mean(a: np.ndarray, r: int) -> np.ndarray:
+    """Sum over a (2r+1)^2 window (clipped at the edges), via summed-area tables."""
+    h, w = a.shape[:2]
+    c = np.pad(a, ((1, 0), (1, 0)) + ((0, 0),) * (a.ndim - 2)).cumsum(0).cumsum(1)
+    y0, y1 = np.clip(np.arange(h) - r, 0, h), np.clip(np.arange(h) + r + 1, 0, h)
+    x0, x1 = np.clip(np.arange(w) - r, 0, w), np.clip(np.arange(w) + r + 1, 0, w)
+    return c[y1][:, x1] - c[y0][:, x1] - c[y1][:, x0] + c[y0][:, x0]
+
+
+def local_ink_mask(px: np.ndarray, mask: np.ndarray, rounds: int = 3) -> np.ndarray:
+    """Ink against a smooth per-pixel background for busy clips (gradients, photos, textures),
+    where one colour marks most of the clip as ink and lines merge or vanish: the window mean of
+    the pixels not currently marked ink, re-estimated a few rounds. It starts from the pixels the
+    single-colour `mask` calls background, so dense clean text keeps exactly its mask; windows
+    with none of them start from the mean of everything. ponytail: a card inside a margin of
+    another colour stays all ink (real-003); starting from the plain mean finds its lines, but
+    merges solid shapes on clean clips, so that needs a test that tells the two apart."""
+    r = max(2, int(min(px.shape[:2]) * LOCAL_RADIUS))
+    f = px.astype(np.float64)
+    bg = box_mean(f, r) / box_mean(np.ones(px.shape[:2] + (1,)), r)
+    for _ in range(rounds + 1):
+        keep = (~mask)[..., None].astype(np.float64)
+        n = box_mean(keep, r)
+        bg = np.where(n > 0.5, box_mean(f * keep, r) / np.maximum(n, 1e-9), bg)
+        mask = (np.abs(f - bg) > THRESHOLD).any(axis=2)
+    return mask
+
+
+SPECKLE = 0.35  # a busy clip's run whose tallest component is below this x the clip's tallest is texture
+
+
+def letter_runs(mask: np.ndarray, runs: list[list[int]]) -> list[list[int]]:
+    """Runs that hold a letter-sized component. On busy clips, paper grain and wood texture can
+    form a run of their own, which the model fills with invented words."""
+    _, boxes = components(mask)
+    tall = [max([b[3] - b[1] + 1 for b in boxes if b[1] >= lo - 2 and b[3] <= hi + 2], default=0) for lo, hi in runs]
+    return [r for r, t in zip(runs, tall) if t >= SPECKLE * max(tall)]
 
 
 def clip_background(px: np.ndarray, robust_bg: bool = True) -> np.ndarray:
@@ -330,7 +377,7 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
     mask = ink_mask(image, scan_max=max(image.size))
     if mask is None:
         return [image]
-    mask = InkMask(text_mask(mask.ink)[0], mask.scale)  # borders, underlines, avatars, stray icons out
+    mask = InkMask(text_mask(mask.ink)[0], mask.scale, mask.busy)  # borders, underlines, avatars, stray icons out
     counts = mask.ink.sum(axis=1)
     runs: list[list[int]] = []
     for y, n in enumerate(counts):
@@ -355,6 +402,8 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
         runs = split
     runs = merge_marks(runs)
     keep = drop_edge_fragments(runs, mask.ink.shape[0], counts)  # lines the selection sliced through
+    if mask.busy and len(runs) > 1:
+        keep = [r for r in keep if r in letter_runs(mask.ink, runs)]
     if len(runs) <= 1:
         return [image]
 

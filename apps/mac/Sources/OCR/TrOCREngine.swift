@@ -280,6 +280,7 @@ enum TrOCREngine {
     private struct InkMask {
         var ink: [Bool]
         let width: Int, height: Int, scale: Int
+        var busy = false  // measured against a local background (see localInkMask)
         subscript(x: Int, y: Int) -> Bool { ink[y * width + x] }
     }
 
@@ -310,7 +311,80 @@ enum TrOCREngine {
                 ink[y * sw + x] = abs(r - bg.0) > threshold || abs(g - bg.1) > threshold || abs(b - bg.2) > threshold
             }
         }
+        if Double(ink.reduce(0) { $0 + ($1 ? 1 : 0) }) > busyInk * Double(sw * sh) {
+            return InkMask(ink: localInkMask(px, width: sw, height: sh, seed: ink), width: sw, height: sh, scale: scale, busy: true)
+        }
         return InkMask(ink: ink, width: sw, height: sh, scale: scale)
+    }
+
+    // Busy clips (gradients, photos, textures): one background colour marks most of
+    // the clip as ink and lines merge or vanish. Same values as pipeline.py and
+    // apps/desktop preprocess.py (training/eval/results/busy_background.md).
+    static let busyInk = 0.3, localRadius = 0.5, speckle = 0.35
+
+    /// Sums over a (2r+1)^2 window (clipped at the edges) of `c` interleaved planes,
+    /// via a summed-area table. Mirrors pipeline.box_mean.
+    static func boxSum(_ a: [Double], width w: Int, height h: Int, channels c: Int, radius r: Int) -> [Double] {
+        let sw = w + 1
+        var s = [Double](repeating: 0, count: (h + 1) * sw * c)
+        for y in 0..<h {  // cumulative down the columns first, then along the rows, as numpy does
+            for x in 0..<w {
+                for k in 0..<c { s[((y + 1) * sw + x + 1) * c + k] = s[(y * sw + x + 1) * c + k] + a[(y * w + x) * c + k] }
+            }
+        }
+        for y in 1...h {
+            for x in 1...w {
+                for k in 0..<c { s[(y * sw + x) * c + k] += s[(y * sw + x - 1) * c + k] }
+            }
+        }
+        var out = [Double](repeating: 0, count: w * h * c)
+        for y in 0..<h {
+            let y0 = max(0, y - r), y1 = min(h, y + r + 1)
+            for x in 0..<w {
+                let x0 = max(0, x - r), x1 = min(w, x + r + 1)
+                for k in 0..<c {
+                    out[(y * w + x) * c + k] = s[(y1 * sw + x1) * c + k] - s[(y0 * sw + x1) * c + k]
+                        - s[(y1 * sw + x0) * c + k] + s[(y0 * sw + x0) * c + k]
+                }
+            }
+        }
+        return out
+    }
+
+    /// Ink against a smooth per-pixel background: the window mean of the pixels not
+    /// currently marked ink, re-estimated a few rounds, starting from the pixels the
+    /// single-colour `seed` mask calls background (dense clean text keeps exactly its
+    /// mask). `px` is RGBA. Mirrors pipeline.local_ink_mask (busy-background line
+    /// counts 26 -> 39 of 50).
+    static func localInkMask(_ px: [UInt8], width w: Int, height h: Int, seed: [Bool], rounds: Int = 3) -> [Bool] {
+        let n = w * h, r = max(2, Int(Double(min(w, h)) * localRadius)), t = Double(inkThreshold)
+        var f = [Double](repeating: 0, count: n * 3)
+        for i in 0..<n { for k in 0..<3 { f[i * 3 + k] = Double(px[i * 4 + k]) } }
+        let area = boxSum([Double](repeating: 1, count: n), width: w, height: h, channels: 1, radius: r)
+        var bg = boxSum(f, width: w, height: h, channels: 3, radius: r)
+        for i in 0..<n { for k in 0..<3 { bg[i * 3 + k] /= area[i] } }
+        var mask = seed
+        for _ in 0...rounds {
+            var kept = f
+            for i in 0..<n where mask[i] { for k in 0..<3 { kept[i * 3 + k] = 0 } }
+            let cnt = boxSum(mask.map { $0 ? 0.0 : 1.0 }, width: w, height: h, channels: 1, radius: r)
+            let sum = boxSum(kept, width: w, height: h, channels: 3, radius: r)
+            for i in 0..<n where cnt[i] > 0.5 { for k in 0..<3 { bg[i * 3 + k] = sum[i * 3 + k] / max(cnt[i], 1e-9) } }
+            mask = (0..<n).map { i in (0..<3).contains { abs(f[i * 3 + $0] - bg[i * 3 + $0]) > t } }
+        }
+        return mask
+    }
+
+    /// Runs that hold a letter-sized component. On busy clips, paper grain and wood
+    /// texture can form a run of their own, which the model fills with invented
+    /// words. Mirrors pipeline.letter_runs.
+    static func letterRuns(_ m: [Bool], width w: Int, height h: Int, runs: [(lo: Int, hi: Int)]) -> [(lo: Int, hi: Int)] {
+        let boxes = components(m, width: w, height: h).boxes
+        let tall = runs.map { run in
+            boxes.filter { $0.y0 >= run.lo - 2 && $0.y1 <= run.hi + 2 }.map { $0.y1 - $0.y0 + 1 }.max() ?? 0
+        }
+        let top = Double(tall.max() ?? 0)
+        return zip(runs, tall).filter { Double($0.1) >= speckle * top }.map(\.0)
     }
 
     static let inkThreshold = 40
@@ -583,7 +657,11 @@ enum TrOCREngine {
             }
         }
         runs = mergeMarks(runs)
-        let keep = dropEdgeFragments(runs, height: mask.height, profile: counts)  // lines the selection sliced through
+        var keep = dropEdgeFragments(runs, height: mask.height, profile: counts)  // lines the selection sliced through
+        if mask.busy && runs.count > 1 {
+            let letters = letterRuns(mask.ink, width: mask.width, height: mask.height, runs: runs)
+            keep = keep.filter { k in letters.contains { $0 == k } }
+        }
         guard runs.count > 1 else { return [image] }
 
         return runs.indices.compactMap { k in

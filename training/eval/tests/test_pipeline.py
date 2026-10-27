@@ -105,3 +105,29 @@ def test_cycle_blocked_token():
     assert cycle_blocked_token([0, 7, 9, 7, 9, 7, 9, 7, 9, 7]) == 9  # a 5th "7 9" would follow
     assert cycle_blocked_token([0, 7, 9, 7, 9, 7, 9, 7]) is None  # ". . . " stays legal
     assert cycle_blocked_token([0, 5, 5, 5, 5]) is None  # single-token runs: blocked_token's job
+
+
+def gradient_bars(rows, grain=False):
+    """Black bars on a blue-to-orange gradient (mirrors apps/desktop tests gradient_bars)."""
+    import numpy as np
+
+    t = np.linspace(0, 1, 400)[None, :, None]
+    px = (np.array([40, 40, 200]) * (1 - t) + np.array([240, 200, 40]) * t).repeat(200, axis=0)
+    img = Image.fromarray(px.astype("uint8"))
+    draw = ImageDraw.Draw(img)
+    for top, bottom in rows:
+        draw.rectangle((20, top, 379, bottom), fill="black")
+    if grain:
+        rng = np.random.default_rng(0)
+        for x, y in zip(rng.integers(20, 380, 200), rng.integers(30, 76, 200)):
+            draw.rectangle((int(x), int(y), int(x) + 1, int(y) + 1), fill="black")
+    return img
+
+
+def test_local_bg_finds_lines_on_a_gradient():
+    kw = dict(split_touching=True, robust_bg=True, drop_noise=True, drop_edge=True)
+    img = gradient_bars([(30, 60), (120, 150)])
+    assert len(line_strips(img, **kw)) == 1  # one corner colour: the whole gradient is "ink"
+    assert [s.size for s in line_strips(img, local_bg=True, **kw)] == [(400, 90), (400, 110)]
+    one = line_strips(gradient_bars([(120, 150)], grain=True), local_bg=True, **kw)
+    assert len(one) == 1 and one[0].height < 200  # the grain band's own strip is dropped

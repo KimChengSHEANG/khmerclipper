@@ -58,7 +58,7 @@ def background_color(px: np.ndarray) -> np.ndarray:
 
 
 def ink_mask(image: Image.Image, scan_max: int | None = 512,
-             robust_bg: bool = False) -> tuple[np.ndarray, int] | None:
+             robust_bg: bool = False, local_bg: bool = False) -> tuple[np.ndarray, int] | None:
     """Bool ink mask (any channel > 40 from the background colour) at <= scan_max long edge.
     Background = mean corner colour; with robust_bg, `background_color` when the corners disagree."""
     w, h = image.size
@@ -71,7 +71,59 @@ def ink_mask(image: Image.Image, scan_max: int | None = 512,
     rgb = image.convert("RGB")
     px = np.asarray(rgb if scale == 1 else rgb.resize((sw, sh), Image.BILINEAR), dtype=np.int32)
     bg = clip_background(px, robust_bg)
-    return (np.abs(px - bg) > THRESHOLD).any(axis=2), scale
+    mask = (np.abs(px - bg) > THRESHOLD).any(axis=2)
+    if local_bg and mask.mean() > BUSY_INK:
+        mask = local_ink_mask(px, mask)
+    return mask, scale
+
+
+def is_busy(image: Image.Image, scan_max: int | None = 512, robust_bg: bool = False) -> bool:
+    """A clip `ink_mask(local_bg=True)` measures against a local background."""
+    m = ink_mask(image, scan_max=scan_max, robust_bg=robust_bg)
+    return m is not None and m[0].mean() > BUSY_INK
+
+
+SPECKLE = 0.35  # a busy clip's run whose tallest component is below this x the clip's tallest is texture
+
+
+def letter_runs(mask: np.ndarray, runs: list[list[int]]) -> list[list[int]]:
+    """Runs that hold a letter-sized component. On busy clips, paper grain and wood texture can
+    form a run of their own, which the model fills with invented words (printed-087)."""
+    _, boxes = components(mask)
+    tall = [max([b[3] - b[1] + 1 for b in boxes if b[1] >= lo - 2 and b[3] <= hi + 2], default=0) for lo, hi in runs]
+    return [r for r, t in zip(runs, tall) if t >= SPECKLE * max(tall)]
+
+
+BUSY_INK = 0.3      # share of "ink" past which one background colour can't describe the clip
+LOCAL_RADIUS = 0.5  # local background window radius, x the clip's short side
+
+
+def box_mean(a: np.ndarray, r: int) -> np.ndarray:
+    """Sum over a (2r+1)^2 window (clipped at the edges), via summed-area tables."""
+    h, w = a.shape[:2]
+    c = np.pad(a, ((1, 0), (1, 0)) + ((0, 0),) * (a.ndim - 2)).cumsum(0).cumsum(1)
+    y0, y1 = np.clip(np.arange(h) - r, 0, h), np.clip(np.arange(h) + r + 1, 0, h)
+    x0, x1 = np.clip(np.arange(w) - r, 0, w), np.clip(np.arange(w) + r + 1, 0, w)
+    return c[y1][:, x1] - c[y0][:, x1] - c[y1][:, x0] + c[y0][:, x0]
+
+
+def local_ink_mask(px: np.ndarray, mask: np.ndarray, rounds: int = 3) -> np.ndarray:
+    """Ink against a smooth per-pixel background for busy clips (gradients, photos, textures),
+    where one colour marks most of the clip as ink and lines merge or vanish: the window mean of
+    the pixels not currently marked ink, re-estimated a few rounds. It starts from the pixels the
+    single-colour `mask` calls background, so dense clean text keeps exactly its mask; windows
+    with none of them start from the mean of everything. ponytail: a card inside a margin of
+    another colour stays all ink (real-003); starting from the plain mean finds its lines, but
+    merges solid shapes on clean clips, so that needs a test that tells the two apart."""
+    r = max(2, int(min(px.shape[:2]) * LOCAL_RADIUS))
+    f = px.astype(np.float64)
+    bg = box_mean(f, r) / box_mean(np.ones(px.shape[:2] + (1,)), r)
+    for _ in range(rounds + 1):
+        keep = (~mask)[..., None].astype(np.float64)
+        n = box_mean(keep, r)
+        bg = np.where(n > 0.5, box_mean(f * keep, r) / np.maximum(n, 1e-9), bg)
+        mask = (np.abs(f - bg) > THRESHOLD).any(axis=2)
+    return mask
 
 
 def clip_background(px: np.ndarray, robust_bg: bool = False) -> np.ndarray:
@@ -362,14 +414,15 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
 
 
 def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: bool = False,
-                drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False) -> list[Image.Image]:
+                drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
+                local_bg: bool = False) -> list[Image.Image]:
     """Port of Swift `TrOCREngine.lineStrips`: runs of inked rows, detached marks merged in,
     strips extended halfway into the gaps.
 
     split_touching: first cut runs holding several lines whose marks touch (no blank row between
     them, common at Khmer line heights) at the line pitch, on a full-resolution mask. Splitting
     before the mark merge matters: a merged double line otherwise makes real lines look small."""
-    m = ink_mask(image, scan_max=None if split_touching else 512, robust_bg=robust_bg)
+    m = ink_mask(image, scan_max=None if split_touching else 512, robust_bg=robust_bg, local_bg=local_bg)
     if m is None:
         return [image]
     mask, s = m
@@ -404,6 +457,8 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
         runs = split
     runs = merge_marks(runs)
     keep = drop_edge_fragments(runs, mask.shape[0], mask.sum(axis=1)) if drop_edge else runs
+    if local_bg and len(runs) > 1 and is_busy(image, scan_max=None if split_touching else 512, robust_bg=robust_bg):
+        keep = [r for r in keep if r in letter_runs(mask, runs)]
     if len(runs) <= 1:
         return [image]
     mh = mask.shape[0]
@@ -417,7 +472,7 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
 
 
 def split_wide(strip: Image.Image, max_aspect: float, space_gap: float = 0.25,
-               window: float = 0.25, robust_bg: bool = False) -> list[tuple[str, Image.Image]]:
+               window: float = 0.25, robust_bg: bool = False, local_bg: bool = False) -> list[tuple[str, Image.Image]]:
     """Cut a line strip whose *line* is wider than `max_aspect` x the strip height into ~equal
     pieces at blank-column runs.
 
@@ -431,7 +486,7 @@ def split_wide(strip: Image.Image, max_aspect: float, space_gap: float = 0.25,
     w, h = strip.size
     if w <= max_aspect * h:
         return [("", strip)]
-    m = ink_mask(strip, scan_max=None, robust_bg=robust_bg)
+    m = ink_mask(strip, scan_max=None, robust_bg=robust_bg, local_bg=local_bg)
     if m is None:
         return [("", strip)]
     mask = m[0]
@@ -476,9 +531,10 @@ def split_wide(strip: Image.Image, max_aspect: float, space_gap: float = 0.25,
     return pieces
 
 
-def content_crop(image: Image.Image, robust_bg: bool = False, drop_noise: bool = False) -> Image.Image:
+def content_crop(image: Image.Image, robust_bg: bool = False, drop_noise: bool = False,
+                 local_bg: bool = False) -> Image.Image:
     """Port of desktop `preprocess.content_crop`: trim background margin, 4% padding."""
-    m = ink_mask(image, robust_bg=robust_bg)
+    m = ink_mask(image, robust_bg=robust_bg, local_bg=local_bg)
     if m is None:
         return image
     mask, s = m
@@ -561,17 +617,18 @@ def decode(images: list[Image.Image], model_dir: Path, device: str, beams: int =
 def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *, split_wide_at: float | None = None,
               crop: bool = False, beam_gate: float | None = None, normalize: bool = False,
               split_touching: bool = False, cycle_cap: bool = False, robust_bg: bool = False,
-              drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False) -> str:
+              drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
+              local_bg: bool = False) -> str:
     device = device or default_device()
     units: list[tuple[str, Image.Image]] = []  # (separator before, image to decode)
     for k, strip in enumerate(line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
-                                               drop_edge=drop_edge, fill_noise=fill_noise)):
+                                               drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg)):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
-        pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg) if split_wide_at else [("", strip)]
+        pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg) if split_wide_at else [("", strip)]
         units += [((" " if k else "") if i == 0 else sep, p) for i, (sep, p) in enumerate(pieces)]
     # With fill_noise the strips are already clean, so the crop needs no second noise pass.
-    images = [content_crop(p, robust_bg=robust_bg, drop_noise=drop_noise and not fill_noise) if crop else p
+    images = [content_crop(p, robust_bg=robust_bg, drop_noise=drop_noise and not fill_noise, local_bg=local_bg) if crop else p
               for _, p in units]
     results = decode(images, model_dir, device, cycle_cap=cycle_cap)
     if beam_gate is not None:
