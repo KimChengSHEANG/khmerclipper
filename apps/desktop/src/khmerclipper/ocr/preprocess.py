@@ -449,6 +449,7 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
 
 
 WIDE_SPLIT_ASPECT = 12.0  # mac TrOCREngine.wideSplitAspect
+BIG_GAP = 2.0  # a wide line is also cut at every blank this many x the text height (menu / table items)
 
 
 def split_wide(strip: Image.Image, max_aspect: float = WIDE_SPLIT_ASPECT) -> list[tuple[str, Image.Image]]:
@@ -495,6 +496,19 @@ def split_wide(strip: Image.Image, max_aspect: float = WIDE_SPLIT_ASPECT) -> lis
         if near:
             g = min(near, key=lambda g: abs((g[0] + g[1]) / 2 - ideal))
             cuts.append(((g[0] + g[1]) // 2, " " if g[1] - g[0] >= 0.25 * text_h else ""))
+    # Items of a menu or table row: the model stops at a wide blank and drops the rest of the
+    # piece (real-021), so also cut at every gap of BIG_GAP x the text height.
+    # Only between two blocks of ink at least half a text height wide: a scrollbar or a lone digit
+    # after the gap stays with its line (as a piece of its own the model invents a word for it).
+    big = [g for g in gaps if g[1] - g[0] >= BIG_GAP * text_h]
+    bounds = [x0] + [b for g in big for b in g] + [x1]
+    for k, g in enumerate(big):
+        left = int((~blank[bounds[2 * k]:g[0]]).sum())
+        right = int((~blank[g[1]:bounds[2 * k + 3]]).sum())
+        cx = (g[0] + g[1]) // 2
+        if min(left, right) >= 0.5 * text_h and all(abs(cx - c) > g[1] - g[0] for c, _ in cuts):
+            cuts.append((cx, " "))
+    cuts.sort()
     if not cuts:
         return [("", strip)]
     pieces, left, sep = [], x0, ""

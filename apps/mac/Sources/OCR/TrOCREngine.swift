@@ -861,6 +861,7 @@ enum TrOCREngine {
     /// screen-set errors 20% without hurting single lines; 8 split 8-12:1
     /// lines that read fine whole.
     static let wideSplitAspect = 12.0
+    static let bigGap = 2.0  // also cut a wide line at blanks this many x the text height (menu / table items)
 
     /// Cuts a strip whose *line* is wider than `maxAspect` x the strip height
     /// into ~equal pieces at blank-column runs. The line's extent comes from
@@ -906,6 +907,21 @@ enum TrOCREngine {
             guard let g = near.min(by: { abs(centre($0) - ideal) < abs(centre($1) - ideal) }) else { continue }
             cuts.append(((g.0 + g.1) / 2, Double(g.1 - g.0) >= 0.25 * Double(textH) ? " " : ""))
         }
+        // Items of a menu or table row: the model stops at a wide blank and drops the rest of
+        // the piece (real-021), so also cut at every gap of bigGap x the text height, but only
+        // between two blocks of ink at least half a text height wide (a scrollbar or a lone digit
+        // after the gap stays with its line). Mirrors pipeline / desktop split_wide.
+        let big = gaps.filter { Double($0.1 - $0.0) >= bigGap * Double(textH) }
+        let bounds = [x0] + big.flatMap { [$0.0, $0.1] } + [x1]
+        for (k, g) in big.enumerated() {
+            let left = (bounds[2 * k]..<g.0).filter { !blank[$0] }.count
+            let right = (g.1..<bounds[2 * k + 3]).filter { !blank[$0] }.count
+            let cx = (g.0 + g.1) / 2
+            if Double(min(left, right)) >= 0.5 * Double(textH) && cuts.allSatisfy({ abs(cx - $0.x) > g.1 - g.0 }) {
+                cuts.append((cx, " "))
+            }
+        }
+        cuts.sort { $0.x < $1.x }
         guard !cuts.isEmpty else { return whole }
         var pieces: [(separator: String, image: CGImage)] = []
         var left = x0, separator = ""

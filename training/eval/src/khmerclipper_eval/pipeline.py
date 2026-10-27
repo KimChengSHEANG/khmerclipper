@@ -505,8 +505,12 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
     return out
 
 
+BIG_GAP = 2.0  # with big_gap: split_wide also cuts at blanks this many x the text height
+
+
 def split_wide(strip: Image.Image, max_aspect: float, space_gap: float = 0.25,
-               window: float = 0.25, robust_bg: bool = False, local_bg: bool = False) -> list[tuple[str, Image.Image]]:
+               window: float = 0.25, robust_bg: bool = False, local_bg: bool = False,
+               big_gap: bool = False) -> list[tuple[str, Image.Image]]:
     """Cut a line strip whose *line* is wider than `max_aspect` x the strip height into ~equal
     pieces at blank-column runs.
 
@@ -555,6 +559,20 @@ def split_wide(strip: Image.Image, max_aspect: float, space_gap: float = 0.25,
             continue
         g = min(near, key=lambda g: abs((g[0] + g[1]) / 2 - ideal))
         cuts.append(((g[0] + g[1]) // 2, " " if g[1] - g[0] >= space_gap * text_h else ""))
+    if big_gap:
+        # Items of a menu or table row: the model stops at a wide blank and drops the rest of
+        # the piece (real-021), so also cut at every gap of BIG_GAP x the text height.
+        # Only between two blocks of ink at least half a text height wide: a scrollbar or a lone
+        # digit after the gap stays with its line (alone, the model invents a word for it).
+        big = [g for g in gaps if g[1] - g[0] >= BIG_GAP * text_h]
+        bounds = [x0] + [b for g in big for b in g] + [x1]
+        for k, g in enumerate(big):
+            left = int((~blank[bounds[2 * k]:g[0]]).sum())
+            right = int((~blank[g[1]:bounds[2 * k + 3]]).sum())
+            cx = (g[0] + g[1]) // 2
+            if min(left, right) >= 0.5 * text_h and all(abs(cx - c) > g[1] - g[0] for c, _ in cuts):
+                cuts.append((cx, " "))
+        cuts.sort()
     if not cuts:
         return [("", strip)]
     pieces, left, sep = [], x0, ""
@@ -652,7 +670,8 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
               crop: bool = False, beam_gate: float | None = None, normalize: bool = False,
               split_touching: bool = False, cycle_cap: bool = False, robust_bg: bool = False,
               drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
-              local_bg: bool = False, letters_all: bool = False, max_gap: bool = False) -> str:
+              local_bg: bool = False, letters_all: bool = False, max_gap: bool = False,
+              big_gap: bool = False) -> str:
     device = device or default_device()
     units: list[tuple[str, Image.Image]] = []  # (separator before, image to decode)
     for k, strip in enumerate(line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
@@ -660,7 +679,7 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
                                                letters_all=letters_all, max_gap=max_gap)):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
-        pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg) if split_wide_at else [("", strip)]
+        pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg, big_gap=big_gap) if split_wide_at else [("", strip)]
         units += [((" " if k else "") if i == 0 else sep, p) for i, (sep, p) in enumerate(pieces)]
     # With fill_noise the strips are already clean, so the crop needs no second noise pass.
     images = [content_crop(p, robust_bg=robust_bg, drop_noise=drop_noise and not fill_noise, local_bg=local_bg) if crop else p

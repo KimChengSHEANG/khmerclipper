@@ -297,6 +297,17 @@ final class TrOCRWideSplitTests: XCTestCase {
         XCTAssertEqual(pieces.map(\.separator), ["", ""])
     }
 
+    /// Mirrors apps/desktop test_split_wide_cuts_a_menu_row_at_every_wide_gap (real-021).
+    func testWideLineCutsAMenuRowAtEveryWideGap() throws {
+        var boxes: [(Int, Int, Int, Int)] = []
+        for k in 0..<6 {
+            for x in stride(from: 10 + 210 * k, to: 110 + 210 * k, by: 12) { boxes.append((x, 8, x + 8, 32)) }
+        }
+        XCTAssertEqual(TrOCREngine.splitWide(try strip(1300, 40, boxes), maxAspect: TrOCREngine.wideSplitAspect).count, 6)
+        boxes.append((1290, 5, 1293, 35))  // scrollbar
+        XCTAssertEqual(TrOCREngine.splitWide(try strip(1300, 40, boxes), maxAspect: TrOCREngine.wideSplitAspect).count, 6)
+    }
+
     func testNoGapKeepsTheStripWhole() throws {
         let pieces = TrOCREngine.splitWide(try strip(400, 24, [(0, 2, 399, 21)]), maxAspect: 10)
         XCTAssertEqual(pieces.count, 1)

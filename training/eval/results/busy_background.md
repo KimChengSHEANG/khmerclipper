@@ -162,3 +162,20 @@ Unverified real captures, desktop, before -> after (labels not yet checked by th
 - real-017: "...read r2day-small.comkod–screnshots show the.44" -> "...read. r2drag-small. / The capture worked—screenshots
   show the 4"
 - real-009: one squashed strip -> its two lines.
+
+## Menu and table rows (2026-10-27)
+
+real-021 (a row of six Khmer category links on a marketplace site) came out with three of six items: the 1258 px line
+was split into three ~400 px pieces, each holding two items with a wide blank between them, and the model stopped at
+the blank. `split_wide` now also cuts at every blank of at least 2x the text height, when both sides hold at least half
+a text height of ink (a thin scrollbar after a wide gap otherwise became a piece the model read as "គឺ" on English
+paragraphs). Pieces changed on no synthetic clip (frozen, screen, slices, noisy all identical on device), only on
+real-008 and real-021, which now reads all six items on Mac and desktop.
+
+## Real captures: what is real
+
+Of the 26 unverified captures, 18 (real-007..015, 017..020, 022, 024, 026..028) are screenshots of the Claude session
+that tested the capture tool on 2026-10-25/26, saved because "Keep capture images" was on; they are marked in
+`fixtures_real/labels.jsonl` as not real use. The user's own Khmer captures with readable text (016, 021, 023, 029) got
+drafts re-read from the image; 001 and 006 (blurry / stylised Khmer) are left for the user. Nothing was marked
+verified.

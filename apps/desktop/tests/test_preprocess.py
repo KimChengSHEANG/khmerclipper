@@ -194,3 +194,19 @@ def test_line_strips_a_far_widget_does_not_collapse_the_lines():
         for x in range(10, 740, 14):
             draw.rectangle((x, top, x + 9, min(159, top + 28)), fill="black")
     assert len(line_strips(img)) >= 3
+
+
+def test_split_wide_cuts_a_menu_row_at_every_wide_gap():
+    # Six menu items 100 px wide with 110 px gaps on one 40 px line (real-021): cut into the
+    # three ~400 px pieces only, the model stopped at the gap inside each piece and dropped
+    # every second item. A thin scrollbar after a wide gap stays with the last item.
+    from khmerclipper.ocr.preprocess import split_wide
+
+    img = Image.new("RGB", (1300, 40), "white")
+    draw = ImageDraw.Draw(img)
+    for k in range(6):
+        for x in range(10 + 210 * k, 110 + 210 * k, 12):
+            draw.rectangle((x, 8, x + 8, 32), fill="black")
+    assert len(split_wide(img)) == 6
+    draw.rectangle((1290, 5, 1293, 35), fill="black")  # scrollbar
+    assert len(split_wide(img)) == 6
