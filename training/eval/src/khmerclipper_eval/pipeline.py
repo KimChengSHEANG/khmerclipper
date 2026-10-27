@@ -72,7 +72,7 @@ def ink_mask(image: Image.Image, scan_max: int | None = 512,
     px = np.asarray(rgb if scale == 1 else rgb.resize((sw, sh), Image.BILINEAR), dtype=np.int32)
     bg = clip_background(px, robust_bg)
     mask = (np.abs(px - bg) > THRESHOLD).any(axis=2)
-    if local_bg and mask.mean() > BUSY_INK:
+    if local_bg and (mask.mean() > BUSY_INK or (mask.mean() > LOCAL_INK and band_varies(px))):
         mask = local_ink_mask(px, mask)
     return mask, scale
 
@@ -94,6 +94,19 @@ def letter_runs(mask: np.ndarray, runs: list[list[int]]) -> list[list[int]]:
     return [r for r, t in zip(runs, tall) if t >= SPECKLE * max(tall)]
 
 
+def band_varies(px: np.ndarray, share: float = 0.75) -> bool:
+    """True when under `share` of the clip's edge band (as in background_color) sits within the
+    ink threshold of the band's most common colour: a gradient or photo panel, not a flat
+    background with glyphs touching the edge."""
+    h, w = px.shape[:2]
+    d = max(1, min(h, w) // 8)
+    band = np.concatenate([px[:d].reshape(-1, 3), px[-d:].reshape(-1, 3),
+                           px[d:-d, :d].reshape(-1, 3), px[d:-d, -d:].reshape(-1, 3)])
+    bg = background_color(px)
+    return float((np.abs(band - bg) <= THRESHOLD).all(axis=1).mean()) < share
+
+
+LOCAL_INK = 0.15    # ... or past this share when the edge band also varies (band_varies)
 BUSY_INK = 0.3      # share of "ink" past which one background colour can't describe the clip
 LOCAL_RADIUS = 0.5  # local background window radius, x the clip's short side
 

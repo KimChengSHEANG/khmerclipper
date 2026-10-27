@@ -20,7 +20,7 @@ SIZE = 384              # TrOCR ViT input
 class InkMask:
     ink: np.ndarray  # bool, shape (h, w)
     scale: int       # mask coords * scale = full-res coords
-    busy: bool = False  # measured against a local background (see local_ink_mask)
+    busy: bool = False  # over BUSY_INK ink: measured locally, texture-only runs dropped (letter_runs)
 
 
 def background_color(px: np.ndarray) -> np.ndarray:
@@ -50,12 +50,24 @@ def ink_mask(image: Image.Image, scan_max: int = SCAN_MAX) -> InkMask | None:
     px = np.asarray(image.convert("RGB").resize((sw, sh), Image.BILINEAR), dtype=np.int32)
     bg = clip_background(px)
     ink = (np.abs(px - bg) > THRESHOLD).any(axis=2)
-    if ink.mean() > BUSY_INK:
-        return InkMask(local_ink_mask(px, ink), scale, busy=True)
+    if ink.mean() > BUSY_INK or (ink.mean() > LOCAL_INK and band_varies(px)):
+        return InkMask(local_ink_mask(px, ink), scale, busy=bool(ink.mean() > BUSY_INK))
     return InkMask(ink, scale)
 
 
+def band_varies(px: np.ndarray, share: float = 0.75) -> bool:
+    """True when under `share` of the clip's edge band (as in background_color) sits within the
+    ink threshold of the band's most common colour: a gradient or photo panel, not a flat
+    background with glyphs touching the edge."""
+    h, w = px.shape[:2]
+    d = max(1, min(h, w) // 8)
+    band = np.concatenate([px[:d].reshape(-1, 3), px[-d:].reshape(-1, 3),
+                           px[d:-d, :d].reshape(-1, 3), px[d:-d, -d:].reshape(-1, 3)])
+    return float((np.abs(band - background_color(px)) <= THRESHOLD).all(axis=1).mean()) < share
+
+
 BUSY_INK = 0.3      # share of "ink" past which one background colour can't describe the clip
+LOCAL_INK = 0.15    # ... or past this share when the edge band also varies (band_varies)
 LOCAL_RADIUS = 0.5  # local background window radius, x the clip's short side
 
 

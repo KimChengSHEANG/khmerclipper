@@ -131,3 +131,15 @@ def test_local_bg_finds_lines_on_a_gradient():
     assert [s.size for s in line_strips(img, local_bg=True, **kw)] == [(400, 90), (400, 110)]
     one = line_strips(gradient_bars([(120, 150)], grain=True), local_bg=True, **kw)
     assert len(one) == 1 and one[0].height < 200  # the grain band's own strip is dropped
+
+
+def test_band_varies_on_a_gradient_not_on_a_flat_clip_with_edge_glyphs():
+    import numpy as np
+
+    from khmerclipper_eval.pipeline import band_varies
+
+    flat = np.full((64, 100, 3), 245)
+    flat[0:30, 0:12] = 20  # a glyph touching the top-left corner (printed-031)
+    assert not band_varies(flat)
+    t = np.linspace(0, 1, 100)[None, :, None]
+    assert band_varies((np.array([235, 235, 245]) * (1 - t) + np.array([150, 160, 215]) * t).repeat(64, axis=0).astype(int))

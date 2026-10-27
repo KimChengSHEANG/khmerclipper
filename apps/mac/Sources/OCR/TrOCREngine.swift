@@ -280,7 +280,7 @@ enum TrOCREngine {
     private struct InkMask {
         var ink: [Bool]
         let width: Int, height: Int, scale: Int
-        var busy = false  // measured against a local background (see localInkMask)
+        var busy = false  // over busyInk ink: measured locally, texture-only runs dropped (letterRuns)
         subscript(x: Int, y: Int) -> Bool { ink[y * width + x] }
     }
 
@@ -311,8 +311,10 @@ enum TrOCREngine {
                 ink[y * sw + x] = abs(r - bg.0) > threshold || abs(g - bg.1) > threshold || abs(b - bg.2) > threshold
             }
         }
-        if Double(ink.reduce(0) { $0 + ($1 ? 1 : 0) }) > busyInk * Double(sw * sh) {
-            return InkMask(ink: localInkMask(px, width: sw, height: sh, seed: ink), width: sw, height: sh, scale: scale, busy: true)
+        let share = Double(ink.reduce(0) { $0 + ($1 ? 1 : 0) }) / Double(sw * sh)
+        if share > busyInk || (share > localInk && bandVaries(px, width: sw, height: sh)) {
+            return InkMask(ink: localInkMask(px, width: sw, height: sh, seed: ink), width: sw, height: sh, scale: scale,
+                           busy: share > busyInk)
         }
         return InkMask(ink: ink, width: sw, height: sh, scale: scale)
     }
@@ -320,7 +322,25 @@ enum TrOCREngine {
     // Busy clips (gradients, photos, textures): one background colour marks most of
     // the clip as ink and lines merge or vanish. Same values as pipeline.py and
     // apps/desktop preprocess.py (training/eval/results/busy_background.md).
-    static let busyInk = 0.3, localRadius = 0.5, speckle = 0.35
+    static let busyInk = 0.3, localInk = 0.15, bandShare = 0.75, localRadius = 0.5, speckle = 0.35
+
+    /// True when under `bandShare` of the clip's edge band (as in backgroundColor) is
+    /// within the ink threshold of the band's most common colour: a gradient or photo
+    /// panel, not a flat background with glyphs touching the edge. Below `busyInk` ink,
+    /// only such clips get a local background. Mirrors pipeline.band_varies.
+    static func bandVaries(_ px: [UInt8], width w: Int, height h: Int) -> Bool {
+        let d = max(1, min(h, w) / 8), bg = backgroundColor(px, width: w, height: h)
+        var near = 0, total = 0
+        for y in 0..<h {
+            for x in 0..<w where y < d || y >= h - d || x < d || x >= w - d {
+                let p = (y * w + x) * 4
+                total += 1
+                if abs(Int(px[p]) - bg.0) <= inkThreshold && abs(Int(px[p + 1]) - bg.1) <= inkThreshold
+                    && abs(Int(px[p + 2]) - bg.2) <= inkThreshold { near += 1 }
+            }
+        }
+        return Double(near) < bandShare * Double(total)
+    }
 
     /// Sums over a (2r+1)^2 window (clipped at the edges) of `c` interleaved planes,
     /// via a summed-area table. Mirrors pipeline.box_mean.

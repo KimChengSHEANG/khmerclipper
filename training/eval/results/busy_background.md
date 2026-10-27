@@ -40,7 +40,7 @@ on 1,300 / 1,300 (boxes within 2 px on 1,250, the existing CoreGraphics vs PIL d
 
 ## Not solved
 
-- 11 background clips still get the wrong line count (mostly 2-3 lines on a strongly textured panel read as one).
+- 11 background clips still got the wrong line count; 3 of those are fixed by the follow-up below, 8 remain.
 - A card inside a white margin (real-003, 4 lines) stays one strip: starting from the margin, the whole card is ink.
   Tried (2026-10-27): when the local mask leaves one component over half the clip, restart from the plain window
   mean and keep it if that breaks the panel up. It split real-003 into its 4 lines and changed no other strip
@@ -60,3 +60,24 @@ it as extra words. Running `drop_edge_fragments` before the merge as well (edge_
 but the right-count tally fell 39 -> 36 (dropping a run changes which runs merge) and 12 of the 30 real captures
 re-split, e.g. real-009, where a nearly whole top line and a sliced bottom line frame one clean line: whether to
 read them depends on what the user meant to select. Reverted; needs labelled real captures to decide.
+
+## Follow-up: gentle gradients under 30% ink (2026-10-27)
+
+Several missed background clips were never "busy": a two-line clip on a soft gradient is 22-28% ink, so it kept the
+single-colour mask and the gradient leaked into it. Lowering the busy threshold to 15% fixed 5 more line counts but
+touched clean clips (frozen +4 errors on one clip, noisy_edgecut +3.4%). Gating the lower threshold on the corners
+disagreeing still split printed-031 (one word whose glyph touches a corner). The kept rule: below 30% ink, a clip gets
+the local background only when over 15% of it is ink **and** under 75% of its edge band (the band `background_color`
+reads) is within the ink threshold of the band's colour, i.e. the background itself varies. Texture-only runs are
+still dropped only above 30% ink.
+
+Line counts: background 39 -> 42 of 50; every other set's strips unchanged (share 0.85 gave 44 but changed an edgecut
+clip). Model, paired against the previous version:
+
+| Run | frozen 200 | screen 450 | slices 320 | noisy background | other noisy kinds | real 4 |
+|---|---|---|---|---|---|---|
+| PyTorch pipeline (3090) | 36 = 36 | 716 = 716 | 164 = 164 | 600 -> 478 (-20.3%, 4 / 0) | identical | - |
+| On device (Mac CoreML) | 12 = 12 | - | - | 603 -> 478 (-20.7%, 4 / 0) | identical | 12 = 12 |
+
+Against main before this work, on device: noisy_background 1439 -> 478 (-66.8%). Parity: desktop strips byte-identical
+to eval on 1,300 / 1,300; Mac piece counts equal desktop on 1,300 / 1,300.

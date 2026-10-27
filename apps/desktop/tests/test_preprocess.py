@@ -159,3 +159,13 @@ def test_line_strips_drops_a_texture_only_run_on_a_busy_clip():
         ImageDraw.Draw(img).rectangle((int(x), int(y), int(x) + 1, int(y) + 1), fill="black")
     strips = line_strips(img)
     assert len(strips) == 1 and strips[0].height < 200  # the grain's own strip is gone
+
+
+def test_band_varies_on_a_gradient_not_on_a_flat_clip_with_edge_glyphs():
+    from khmerclipper.ocr.preprocess import band_varies
+
+    flat = np.full((64, 100, 3), 245)
+    flat[0:30, 0:12] = 20  # a glyph touching the top-left corner (printed-031)
+    assert not band_varies(flat)
+    t = np.linspace(0, 1, 100)[None, :, None]
+    assert band_varies((np.array([235, 235, 245]) * (1 - t) + np.array([150, 160, 215]) * t).repeat(64, axis=0).astype(int))

@@ -202,6 +202,22 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(strips.map(\.height), [90, 110])
     }
 
+    /// Mirrors apps/desktop test_band_varies_on_a_gradient_not_on_a_flat_clip_with_edge_glyphs.
+    func testBandVariesOnAGradientNotOnAFlatClipWithEdgeGlyphs() {
+        let w = 100, h = 64
+        var flat = [UInt8](repeating: 245, count: w * h * 4)
+        for y in 0..<30 { for x in 0..<12 { for k in 0..<3 { flat[(y * w + x) * 4 + k] = 20 } } }
+        XCTAssertFalse(TrOCREngine.bandVaries(flat, width: w, height: h))
+        var grad = [UInt8](repeating: 255, count: w * h * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let t = Double(x) / Double(w - 1), p = (y * w + x) * 4
+                grad[p] = UInt8(235 * (1 - t) + 150 * t); grad[p + 1] = UInt8(235 * (1 - t) + 160 * t); grad[p + 2] = UInt8(245 * (1 - t) + 215 * t)
+            }
+        }
+        XCTAssertTrue(TrOCREngine.bandVaries(grad, width: w, height: h))
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)
