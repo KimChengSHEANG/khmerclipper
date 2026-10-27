@@ -212,3 +212,7 @@ background its line gaps vanished, while on its own the strip splits into its fi
 gutter is now split into lines again on its own. Pieces changed only on real-008 (47 -> 54 on desktop; Mac and desktop
 piece counts still equal on 1,300 / 1,300), which now reads in full from "The capture readout now uses small, thin
 digits next to the macOS crosshair..." through the panel.
+Adaptive thresholding (ink = darker than the local mean by 15-25, windows 8-16 px) doesn't separate real-006 either:
+photo grain keeps every row inked (1-3% of a row in the gaps), and the gap between its 2nd and 3rd lines stays at
+~23% of the densest row. A grain-tolerant row split would only free the heading; not worth a rule that touches every
+scanned clip.
