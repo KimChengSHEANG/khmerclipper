@@ -399,7 +399,54 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
     return out or runs
 
 
+COLUMN_TALL = 5.0  # a strip this many x the typical glyph height holds several lines ...
+COLUMN_GAP = 2.0   # ... and is cut at its widest blank column band, if at least this x glyph height wide
+
+
 def line_strips(image: Image.Image) -> list[Image.Image]:
+    """Text-line strips (row_strips), with multi-column strips split into their columns.
+    A single strip is a single line: its word gaps are not a gutter."""
+    strips = row_strips(image)
+    return [c for s in strips for c in split_columns(s)] if len(strips) > 1 else strips
+
+
+def split_columns(strip: Image.Image, depth: int = 2) -> list[Image.Image]:
+    """Strips of a multi-column clip (a panel over a chat, real-008): the columns' lines
+    interleave, so no row is blank and one "line" strip holds several lines of each column. A
+    strip much taller than a glyph is cut at its widest blank column band and each side is
+    split into lines again, left column first (results/busy_background.md)."""
+    m = ink_mask(strip, scan_max=max(strip.size))
+    if m is None or depth == 0:
+        return [strip]
+    mask = text_mask(m.ink)[0]
+    g = glyph_height(components(mask)[1])
+    if not g or strip.height < COLUMN_TALL * g:
+        return [strip]
+    blank = ~mask.any(axis=0)
+    ink = np.nonzero(~blank)[0]
+    if ink.size == 0:
+        return [strip]
+    best, x = (0, 0, 0), int(ink[0])
+    while x <= ink[-1]:
+        if blank[x]:
+            s = x
+            while x <= ink[-1] and blank[x]:
+                x += 1
+            best = max(best, (x - s, s, x))
+        else:
+            x += 1
+    width, a, b = best
+    if width < COLUMN_GAP * g:
+        return [strip]
+    cut = (a + b) // 2
+    out = []
+    for part in (strip.crop((0, 0, cut, strip.height)), strip.crop((cut, 0, strip.width, strip.height))):
+        for line in row_strips(part):
+            out += split_columns(line, depth - 1)
+    return out
+
+
+def row_strips(image: Image.Image) -> list[Image.Image]:
     """Split a clip into horizontal text-line strips by row ink projection (mac lineStrips).
 
     Khmer subscripts often touch the next line's marks, leaving no blank row, so runs are first

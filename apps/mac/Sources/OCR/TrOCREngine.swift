@@ -671,7 +671,46 @@ enum TrOCREngine {
     /// Mirrors training/eval/src/khmerclipper_eval/pipeline.py line_strips
     /// (split_touching=True), which measured multi-line screen-clip CER
     /// 0.314 -> 0.046 (training/eval/results/accuracy_v3.md).
+    // Multi-column clips (a panel over a chat, real-008): the columns' lines interleave, so
+    // no row is blank and one "line" strip holds several lines of each column. Same values
+    // as pipeline.py and apps/desktop preprocess.py (training/eval/results/busy_background.md).
+    static let columnTall = 5.0, columnGap = 2.0
+
+    /// Text-line strips (rowStrips), with multi-column strips split into their columns. A
+    /// single strip is a single line: its word gaps are not a gutter.
     static func lineStrips(_ image: CGImage) -> [CGImage] {
+        let strips = rowStrips(image)
+        return strips.count > 1 ? strips.flatMap { splitColumns($0) } : strips
+    }
+
+    /// A strip much taller than a glyph is cut at its widest blank column band and each
+    /// side is split into lines again, left column first. Mirrors pipeline.split_columns.
+    static func splitColumns(_ strip: CGImage, depth: Int = 2) -> [CGImage] {
+        guard depth > 0, var mask = inkMask(strip, scanMax: max(strip.width, strip.height)) else { return [strip] }
+        mask.ink = textMask(mask.ink, width: mask.width, height: mask.height).kept
+        let g = glyphHeight(components(mask.ink, width: mask.width, height: mask.height).boxes)
+        guard g > 0, Double(strip.height) >= columnTall * g else { return [strip] }
+        let blank = (0..<mask.width).map { x in !(0..<mask.height).contains { mask[x, $0] } }
+        guard let first = blank.firstIndex(of: false), let last = blank.lastIndex(of: false) else { return [strip] }
+        var best = (width: 0, a: 0, b: 0), x = first
+        while x <= last {
+            if blank[x] {
+                let s = x
+                while x <= last && blank[x] { x += 1 }
+                // numpy max over (width, start, end): widest, then the later one on ties
+                if (x - s, s, x) > (best.width, best.a, best.b) { best = (x - s, s, x) }
+            } else {
+                x += 1
+            }
+        }
+        guard Double(best.width) >= columnGap * g else { return [strip] }
+        let cut = (best.a + best.b) / 2
+        let parts = [CGRect(x: 0, y: 0, width: cut, height: strip.height),
+                     CGRect(x: cut, y: 0, width: strip.width - cut, height: strip.height)].compactMap { strip.cropping(to: $0) }
+        return parts.flatMap { rowStrips($0).flatMap { splitColumns($0, depth: depth - 1) } }
+    }
+
+    static func rowStrips(_ image: CGImage) -> [CGImage] {
         // Full resolution: line pitch on small screen text is only ~20 rows.
         guard var mask = inkMask(image, scanMax: max(image.width, image.height)) else { return [image] }
         mask.ink = textMask(mask.ink, width: mask.width, height: mask.height).kept  // borders, avatars, stray icons out

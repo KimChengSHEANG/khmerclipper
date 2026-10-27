@@ -191,3 +191,19 @@ and misses the two greetings (ជំរាបសួរ / ជំរាបលា r
 not preprocessing.
 Pitch cuts on the local mask don't reach it either: `line_pitch` finds no period in real-006's local row profile
 (three lines, one a short heading), and on printed-031 the local profile's pitch would cut one word into five pieces.
+
+## Two columns (2026-10-27)
+
+real-008 (a settings panel over a chat, ~30 lines in two columns whose lines interleave) read as Khmer gibberish:
+no row is blank, so each "line" strip held several lines of both columns. When a clip has more than one strip, a
+strip at least 5x the typical glyph height is now cut at its widest blank column band (if at least 2x glyph height
+wide) and each side is split into lines again, left column first (up to two levels). Thresholds: 2.5x / 1x changed
+dozens of synthetic clips (a Khmer strip with its marks is ~2.5x its glyphs); 4x / 2x still touched two noisy clips;
+5x / 2x touches none. A single-strip clip is left alone: real-001 (faint handwriting, tiny glyph estimate) split its
+word gaps as gutters.
+
+real-008 on device now reads the panel and the chat as English lines ("Qwen 3 0.6B Download / Smallest and fastest.
+Good word completion on any Mac. - 396,7 MB / Commit and push the capture cursor and readout changes. ..."); only the
+top chat bubble, whose outline joins its rows, is still garbled. Every eval set is identical on device (frozen 12,
+screen 734, slices 165, noisy 1816, real 12). Desktop strips equal eval on 1,300 / 1,300; Mac piece counts equal
+desktop on 1,300 / 1,300.

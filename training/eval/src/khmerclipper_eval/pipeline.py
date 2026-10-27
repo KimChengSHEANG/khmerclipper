@@ -505,6 +505,46 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
     return out
 
 
+COLUMN_TALL = 5.0  # a strip this many x the typical glyph height holds several lines ...
+COLUMN_GAP = 2.0   # ... and is cut at its widest blank column band, if at least this x glyph height wide
+
+
+def split_columns(strip: Image.Image, depth: int = 2, **kw) -> list[Image.Image]:
+    """Strips of a multi-column clip (a panel over a chat, real-008): the columns' lines
+    interleave, so no row is blank and one "line" strip holds several lines of each column. A
+    strip much taller than a glyph is cut at its widest blank column band and each side is
+    split into lines again, left column first."""
+    m = ink_mask(strip, scan_max=None, robust_bg=kw.get("robust_bg", False), local_bg=kw.get("local_bg", False))
+    if m is None or depth == 0:
+        return [strip]
+    mask = text_mask(m[0])[0]
+    g = glyph_height(components(mask)[1])
+    if not g or strip.height < COLUMN_TALL * g:
+        return [strip]
+    blank = ~mask.any(axis=0)
+    ink = np.nonzero(~blank)[0]
+    if ink.size == 0:
+        return [strip]
+    best, x = (0, 0, 0), int(ink[0])
+    while x <= ink[-1]:
+        if blank[x]:
+            s = x
+            while x <= ink[-1] and blank[x]:
+                x += 1
+            best = max(best, (x - s, s, x))
+        else:
+            x += 1
+    width, a, b = best
+    if width < COLUMN_GAP * g:
+        return [strip]
+    cut = (a + b) // 2
+    out = []
+    for part in (strip.crop((0, 0, cut, strip.height)), strip.crop((cut, 0, strip.width, strip.height))):
+        for line in line_strips(part, True, **kw):
+            out += split_columns(line, depth - 1, **kw)
+    return out
+
+
 BIG_GAP = 2.0  # with big_gap: split_wide also cuts at blanks this many x the text height
 
 
@@ -671,12 +711,17 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
               split_touching: bool = False, cycle_cap: bool = False, robust_bg: bool = False,
               drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
               local_bg: bool = False, letters_all: bool = False, max_gap: bool = False,
-              big_gap: bool = False) -> str:
+              big_gap: bool = False, columns: bool = False) -> str:
     device = device or default_device()
     units: list[tuple[str, Image.Image]] = []  # (separator before, image to decode)
-    for k, strip in enumerate(line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
+    strips = line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
                                                drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg,
-                                               letters_all=letters_all, max_gap=max_gap)):
+                                               letters_all=letters_all, max_gap=max_gap)
+    if columns and len(strips) > 1:  # one strip: a single line (word gaps are not a gutter)
+        kw = dict(robust_bg=robust_bg, drop_noise=drop_noise, drop_edge=drop_edge, local_bg=local_bg,
+                  letters_all=letters_all, max_gap=max_gap)
+        strips = [c for st in strips for c in split_columns(st, **kw)]
+    for k, strip in enumerate(strips):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
         pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg, big_gap=big_gap) if split_wide_at else [("", strip)]

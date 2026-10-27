@@ -210,3 +210,21 @@ def test_split_wide_cuts_a_menu_row_at_every_wide_gap():
     assert len(split_wide(img)) == 6
     draw.rectangle((1290, 5, 1293, 35), fill="black")  # scrollbar
     assert len(split_wide(img)) == 6
+
+
+def test_split_columns_reads_a_multi_line_strip_column_by_column():
+    # A strip several lines tall with a blank gutter (real-008: a settings panel over a chat,
+    # whose lines interleave so the row splitter can't separate them) comes back as each
+    # column's lines, left column first. A one-line strip is left alone.
+    from khmerclipper.ocr.preprocess import split_columns
+
+    img = Image.new("RGB", (900, 200), "white")
+    draw = ImageDraw.Draw(img)
+    for x0, tops in ((20, (10, 60, 110, 160)), (520, (30, 90, 150))):
+        for top in tops:
+            for x in range(x0, x0 + 340, 14):
+                draw.rectangle((x, top, x + 9, top + 22), fill="black")
+    parts = split_columns(img)
+    assert len(parts) == 7 and all(p.width < 900 for p in parts)
+    assert [p.width for p in parts][:4] == [parts[0].width] * 4  # the left column's 4 lines first
+    assert len(split_columns(img.crop((0, 0, 900, 40)))) == 1
