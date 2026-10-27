@@ -27,8 +27,8 @@ from datasets import Dataset, Features, Value, load_dataset
 from datasets import Image as DSImage
 
 from trocr_khmer.data_sources import resolve_dataset
-from trocr_khmer.synth import (augment_case, build_corpus, corpus_part, is_latin_only, load_fonts, render_sample,
-                               render_screen_sample, require_raqm)
+from trocr_khmer.synth import (augment_case, build_corpus, corpus_part, is_latin_only, load_fonts, render_handwriting_sample,
+                               render_sample, render_screen_sample, require_raqm)
 
 EVAL = Path(__file__).resolve().parents[2] / "eval"
 FEATURES = Features(
@@ -93,6 +93,7 @@ def main() -> None:
     p.add_argument("--screen_sizes", type=int, nargs=2, default=(11, 24), help="--screen px range")
     p.add_argument("--screen_dark", type=float, default=0.3, help="--screen share of dark panels")
     p.add_argument("--screen_bold", type=float, default=0.0, help="--screen share drawn bold")
+    p.add_argument("--handwriting", action="store_true", help="handwriting-looking lines (v6)")
     p.add_argument("--screen_busy", type=float, default=0.0,
                    help="--screen share set on photo / gradient / texture panels (v5)")
     p.add_argument("--colon_prefix", type=float, default=0.0,
@@ -128,7 +129,9 @@ def main() -> None:
             text = augment_case(text, rng)
         if args.colon_prefix and rng.random() < args.colon_prefix:
             text = colon_prefix(rng) + text
-        if args.screen:
+        if args.handwriting:
+            sample = render_handwriting_sample(text, fonts, rng)
+        elif args.screen:
             # Neighbour lines exist ~75% of the time (strips at a clip's top / bottom edge have none).
             near = tuple(corpus[rng.randrange(len(corpus))] if rng.random() < 0.75 else None for _ in range(2))
             sample = render_screen_sample(text, near, fonts, rng, sizes=tuple(args.screen_sizes),

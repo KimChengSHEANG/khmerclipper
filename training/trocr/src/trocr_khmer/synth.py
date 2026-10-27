@@ -430,3 +430,61 @@ def augment_case(text: str, rng: random.Random) -> str:
     if r < 0.7:
         return text.upper()
     return text
+
+
+def _warp(image: Image.Image, rng: random.Random, amp: float, scale: float, bg) -> Image.Image:
+    """Smooth random displacement (elastic distortion): a coarse noise grid upsampled into a
+    per-pixel x/y shift of up to ``amp`` px, so strokes wobble the way a pen does."""
+    w, h = image.size
+    nprng = np.random.default_rng(rng.getrandbits(32))
+    gw, gh = max(2, int(w / scale)), max(2, int(h / scale))
+    dx = np.asarray(Image.fromarray(nprng.uniform(-1, 1, (gh, gw)).astype(np.float32)).resize((w, h), Image.BICUBIC)) * amp
+    dy = np.asarray(Image.fromarray(nprng.uniform(-1, 1, (gh, gw)).astype(np.float32)).resize((w, h), Image.BICUBIC)) * amp
+    ys, xs = np.mgrid[0:h, 0:w]
+    sx = np.clip(np.rint(xs + dx).astype(int), 0, w - 1)
+    sy = np.clip(np.rint(ys + dy).astype(int), 0, h - 1)
+    return Image.fromarray(np.asarray(image)[sy, sx])
+
+
+def render_handwriting_sample(text: str, fonts: list[FontInfo], rng: random.Random):
+    """A handwritten-looking line (v6): a handwriting font, then pen-like distortion -- elastic
+    wobble, a wavy baseline, uneven stroke weight -- in blue or black ink on white / cream paper,
+    sometimes ruled, scanned (blur, JPEG). The real handwriting set is short words in dark pen,
+    loose strokes, uneven weight. Returns ``(image, meta)`` or ``None`` when no handwriting font
+    covers ``text``."""
+    usable = [f for f in fonts if f.kind == "handwriting" and covers(f, text)]
+    if not usable:
+        return None
+    font = rng.choice(usable)
+    paper = rng.choice([(255, 255, 255), (250, 247, 238), (244, 240, 228), (236, 236, 236)])
+    ink = rng.choice([(20, 20, 25), (35, 35, 60), (25, 40, 120), (40, 60, 150)])
+    size = rng.randint(28, 72)
+    image = render_text(text, font.path, size, ink, paper, pad=(rng.randint(8, 30), rng.randint(8, 24)))
+    w, h = image.size
+    # Wavy baseline: shift each column by a slow sine.
+    amp, period, phase = rng.uniform(0, size * 0.08), rng.uniform(1.5, 5) * size, rng.uniform(0, 6.3)
+    px = np.asarray(image)
+    shifted = np.empty_like(px)
+    for x in range(w):
+        shifted[:, x] = np.roll(px[:, x], int(round(amp * math.sin(phase + 2 * math.pi * x / period))), axis=0)
+    image = Image.fromarray(shifted)
+    image = _warp(image, rng, amp=rng.uniform(0.5, size * 0.035), scale=rng.uniform(14, 30), bg=paper)
+    # Uneven stroke weight: a heavier or lighter pen.
+    r = rng.random()
+    if r < 0.3:
+        image = image.filter(ImageFilter.MinFilter(3))  # thicker dark strokes
+    elif r < 0.4 and size >= 56:
+        image = image.filter(ImageFilter.MaxFilter(3))  # thinner strokes
+    if rng.random() < 0.3:  # faint ruled lines
+        draw = ImageDraw.Draw(image)
+        rule = tuple(int(c * 0.92) for c in paper)
+        step = rng.randint(int(size * 0.9), int(size * 1.6))
+        for y in range(rng.randint(0, step), h, step):
+            draw.line((0, y, w, y), fill=rule, width=1)
+    if rng.random() < 0.6:
+        image = image.filter(ImageFilter.GaussianBlur(rng.uniform(0.3, 1.0)))
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=rng.randint(40, 90))
+    buf.seek(0)
+    return Image.open(buf).convert("RGB"), {"font": font.path.name, "kind": "handwriting", "style": "handwriting",
+                                            "italic": False}
