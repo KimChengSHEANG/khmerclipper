@@ -32,7 +32,7 @@ for m in v3 v6_last v6_final; do
   dir=../trocr/$V3; [ $m = v6_last ] && dir=../trocr/experiments/v6_last; [ $m = v6_final ] && dir=../trocr/experiments/v6/final
   for fx in fixtures fixtures_screen fixtures_slices fixtures_noisy; do
     [ -s results/gate6_${m}_$fx.csv ] || python scripts/bench.py --fixtures $fx --engine trocr-pipeline --trocr-model-dir $dir \
-      --variant split_touching=1,split_wide_at=12,crop=1,robust_bg=1,drop_noise=1,drop_edge=1,local_bg=1,letters_all=1,max_gap=1,columns=1 \
+      --variant split_touching=1,split_wide_at=12,crop=1,robust_bg=1,drop_noise=1,drop_edge=1,local_bg=1,letters_all=1,max_gap=1,columns=1,big_gap=1 \
       --out results/gate6_${m}_$fx.csv
   done
 done
