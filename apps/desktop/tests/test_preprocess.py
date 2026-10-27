@@ -241,3 +241,17 @@ def test_split_columns_resplits_a_tall_strip_without_a_gutter():
         for x in range(20, 860, 14):
             draw.rectangle((x, top, x + 9, top + 22), fill="black")
     assert len(split_columns(img)) == 5
+
+
+def test_photo_rows_leaves_clean_and_single_line_clips_alone():
+    # The photo fallback (real-006, a photo of a printed notice) only runs on a one-strip clip
+    # with no blank row; clean lines with gaps, and one line, are never re-cut by it.
+    from khmerclipper.ocr.preprocess import photo_rows
+
+    clean = Image.new("RGB", (660, 110), "white")
+    draw = ImageDraw.Draw(clean)
+    for top in (12, 45, 78):
+        for x in range(40, 620, 13):
+            draw.rectangle((x, top, x + 8, top + 20), fill="black")
+    assert photo_rows(clean) is None
+    assert photo_rows(clean.crop((0, 8, 660, 36))) is None

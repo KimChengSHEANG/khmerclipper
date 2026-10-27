@@ -300,6 +300,23 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(TrOCREngine.splitColumns(try XCTUnwrap(ctx.makeImage())).count, 5)
     }
 
+    /// Mirrors apps/desktop test_photo_rows_leaves_clean_and_single_line_clips_alone.
+    func testPhotoRowsLeavesCleanAndSingleLineClipsAlone() throws {
+        let width = 660, height = 110
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.setFillColor(.black)
+        for top in [12, 45, 78] {
+            for x in stride(from: 40, to: 620, by: 13) { ctx.fill(CGRect(x: x, y: height - 1 - (top + 20), width: 9, height: 21)) }
+        }
+        let clean = try XCTUnwrap(ctx.makeImage())
+        XCTAssertNil(TrOCREngine.photoRows(clean))
+        XCTAssertNil(TrOCREngine.photoRows(try XCTUnwrap(clean.cropping(to: CGRect(x: 0, y: 8, width: width, height: 28)))))
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)

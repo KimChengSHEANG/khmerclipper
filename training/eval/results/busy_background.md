@@ -216,3 +216,17 @@ Adaptive thresholding (ink = darker than the local mean by 15-25, windows 8-16 p
 photo grain keeps every row inked (1-3% of a row in the gaps), and the gap between its 2nd and 3rd lines stays at
 ~23% of the densest row. A grain-tolerant row split would only free the heading; not worth a rule that touches every
 scanned clip.
+
+## Photos of paper (2026-10-27)
+
+real-006 (the user's photo of a printed notice) now reads as its three lines: "«សំណេរអង្គរលើកទី២*" / "សម័យប្រឡង៖
+ថ្ងៃអាទិត្យ ៦ទោច ខែឫស្សឆ្នាំរោង ឆស័ក ឮទ្ធសករាជ២៥៦៨" / "... ត្រូវនឹងថ្ងៃទី១៩ ខែមករា ឆ្នាំ២០២៥" (was one garbled line).
+`photo_rows`: only for a clip that comes out as one strip, has no blank row in its mask and is at least 3x the typical
+glyph height. Ink is re-measured as pixels 25 darker than their 16 px neighbourhood (adaptive threshold), the row
+profile (outer 5% of columns ignored) is cut where a row holds under 30% of the densest row's ink, runs peaking under
+30% are grain, and the split is kept only when the shortest piece is at least 60% of the tallest. Without that last
+rule, ten 64 px printed clips were cut at their ascender / descender bands (printed-001 into 74 pieces).
+
+Pieces changed only on real-006 and noisy-background-039 (two lines, previously one strip). On device: background
+478 -> 454 (-5.0%, 1 / 0); frozen, screen, slices, real and every other noisy kind identical. Desktop strips equal
+eval on 1,300 / 1,300; Mac piece counts equal desktop on 1,300 / 1,300.

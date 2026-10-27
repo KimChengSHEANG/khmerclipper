@@ -680,7 +680,52 @@ enum TrOCREngine {
     /// single strip is a single line: its word gaps are not a gutter.
     static func lineStrips(_ image: CGImage) -> [CGImage] {
         let strips = rowStrips(image)
-        return strips.count > 1 ? strips.flatMap { splitColumns($0) } : strips
+        if strips.count > 1 { return strips.flatMap { splitColumns($0) } }
+        return photoRows(image) ?? strips
+    }
+
+    // Photos of paper (real-006). Same values as pipeline.py and apps/desktop preprocess.py.
+    static let photoTall = 3.0, photoDarker = 25.0, photoRadius = 16, photoValley = 0.3, photoGrain = 0.3, photoEven = 0.6
+
+    /// Lines of a photo of paper: vignetting and grain leave ink in every row of the
+    /// background-difference mask, so no row is blank and the whole clip is one strip. Only
+    /// for a clip with no blank row that is several glyphs tall: ink is re-measured as pixels
+    /// darker than their neighbourhood and the clip is cut at the valleys of that row profile
+    /// (outer 5% of columns ignored). nil unless that finds >= 2 lines of similar height.
+    /// Mirrors pipeline / desktop photo_rows.
+    static func photoRows(_ image: CGImage) -> [CGImage]? {
+        guard var mask = inkMask(image, scanMax: max(image.width, image.height)), mask.scale == 1 else { return nil }
+        mask.ink = textMask(mask.ink, width: mask.width, height: mask.height).kept
+        let g = glyphHeight(components(mask.ink, width: mask.width, height: mask.height).boxes)
+        let w = mask.width, h = mask.height
+        let everyRowInked = (0..<h).allSatisfy { y in (0..<w).contains { mask[$0, y] } }
+        guard g > 0, everyRowInked, Double(h) >= photoTall * g,
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let lum = (0..<(w * h)).map { (Double(px[$0 * 4]) + Double(px[$0 * 4 + 1]) + Double(px[$0 * 4 + 2])) / 3 }
+        let sum = boxSum(lum, width: w, height: h, channels: 1, radius: photoRadius)
+        let area = boxSum([Double](repeating: 1, count: w * h), width: w, height: h, channels: 1, radius: photoRadius)
+        let x0 = Int(0.05 * Double(w)), x1 = Int(0.95 * Double(w))
+        let rows: [Double] = (0..<h).map { y in
+            Double((x0..<x1).filter { x in lum[y * w + x] < sum[y * w + x] / area[y * w + x] - photoDarker }.count) / Double(x1 - x0)
+        }
+        let prof = rows.indices.map { y in ((y > 0 ? rows[y - 1] : 0) + rows[y] + (y + 1 < h ? rows[y + 1] : 0)) / 3 }
+        guard let top = prof.max(), top > 0 else { return nil }
+        var runs: [(Int, Int)] = [], y = 0
+        while y < h {
+            if prof[y] <= photoValley * top { y += 1; continue }
+            let start = y
+            while y < h && prof[y] > photoValley * top { y += 1 }
+            if prof[start..<y].max()! >= photoGrain * top { runs.append((start, y - 1)) }
+        }
+        guard runs.count >= 2 else { return nil }
+        let cuts = [0] + (0..<(runs.count - 1)).map { (runs[$0].1 + runs[$0 + 1].0 + 1) / 2 } + [h]
+        let heights = (0..<runs.count).map { cuts[$0 + 1] - cuts[$0] }
+        guard Double(heights.min()!) >= photoEven * Double(heights.max()!) else { return nil }
+        return (0..<runs.count).compactMap { image.cropping(to: CGRect(x: 0, y: cuts[$0], width: image.width, height: cuts[$0 + 1] - cuts[$0])) }
     }
 
     /// A strip much taller than a glyph is cut at its widest blank column band and each

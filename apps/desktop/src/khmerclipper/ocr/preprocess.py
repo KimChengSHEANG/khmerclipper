@@ -405,9 +405,64 @@ COLUMN_GAP = 2.0   # ... and is cut at its widest blank column band, if at least
 
 def line_strips(image: Image.Image) -> list[Image.Image]:
     """Text-line strips (row_strips), with multi-column strips split into their columns.
-    A single strip is a single line: its word gaps are not a gutter."""
+    A single strip is a single line (its word gaps are not a gutter), unless it is a photo of
+    several lines (photo_rows)."""
     strips = row_strips(image)
-    return [c for s in strips for c in split_columns(s)] if len(strips) > 1 else strips
+    if len(strips) > 1:
+        return [c for s in strips for c in split_columns(s)]
+    return photo_rows(image) or strips
+
+
+PHOTO_TALL = 3.0     # a one-strip clip this many x the typical glyph height may hold several lines ...
+PHOTO_DARKER = 25    # ... found as pixels this much darker than their PHOTO_RADIUS-px neighbourhood ...
+PHOTO_RADIUS = 16
+PHOTO_VALLEY = 0.3   # ... with lines cut where a row holds under this share of the densest row's ink ...
+PHOTO_GRAIN = 0.3    # ... and runs peaking under this share dropped as grain
+PHOTO_EVEN = 0.6     # accepted only when the shortest piece is this share of the tallest
+
+
+def photo_rows(image: Image.Image) -> list[Image.Image] | None:
+    """Lines of a photo of paper (real-006): vignetting and grain leave ink in every row of the
+    background-difference mask, so no row is blank and the whole clip is one strip. Only for a
+    clip with no blank row that is several glyphs tall: ink is re-measured as pixels darker than
+    their neighbourhood (adaptive threshold), and the clip is cut at the valleys of that row
+    profile (outer 5% of columns ignored: the photo's edges). None when that finds < 2 lines."""
+    m = ink_mask(image, scan_max=max(image.size))
+    if m is None or m.scale != 1:
+        return None
+    mask = text_mask(m.ink)[0]
+    g = glyph_height(components(mask)[1])
+    if not g or not mask.any(axis=1).all() or image.height < PHOTO_TALL * g:
+        return None
+    lum = np.asarray(image.convert("RGB"), dtype=np.float64).mean(axis=2)
+    r = PHOTO_RADIUS
+    local = box_mean(lum[..., None], r)[..., 0] / box_mean(np.ones(lum.shape + (1,)), r)[..., 0]
+    dark = lum < local - PHOTO_DARKER
+    h, w = dark.shape
+    prof = np.convolve(dark[:, int(0.05 * w):int(0.95 * w)].mean(axis=1), np.ones(3) / 3, "same")
+    top = prof.max()
+    if top <= 0:
+        return None
+    low = prof <= PHOTO_VALLEY * top
+    runs, y = [], 0
+    while y < h:
+        if low[y]:
+            y += 1
+            continue
+        start = y
+        while y < h and not low[y]:
+            y += 1
+        if prof[start:y].max() >= PHOTO_GRAIN * top:
+            runs.append((start, y - 1))
+    if len(runs) < 2:
+        return None
+    cuts = [0] + [(runs[k][1] + runs[k + 1][0] + 1) // 2 for k in range(len(runs) - 1)] + [h]
+    heights = [cuts[k + 1] - cuts[k] for k in range(len(runs))]
+    # Lines of a page come out alike; a single printed line cut at its ascender / descender
+    # bands (frozen printed clips) leaves one piece much shorter than another.
+    if min(heights) < PHOTO_EVEN * max(heights):
+        return None
+    return [image.crop((0, cuts[k], image.width, cuts[k + 1])) for k in range(len(runs))]
 
 
 def split_columns(strip: Image.Image, depth: int = 2) -> list[Image.Image]:

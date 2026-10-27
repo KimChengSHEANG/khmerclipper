@@ -505,6 +505,57 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
     return out
 
 
+PHOTO_TALL = 3.0     # a one-strip clip this many x the typical glyph height may hold several lines ...
+PHOTO_DARKER = 25    # ... found as pixels this much darker than their PHOTO_RADIUS-px neighbourhood ...
+PHOTO_RADIUS = 16
+PHOTO_VALLEY = 0.3   # ... with lines cut where a row holds under this share of the densest row's ink ...
+PHOTO_GRAIN = 0.3    # ... and runs peaking under this share dropped as grain
+PHOTO_EVEN = 0.6     # accepted only when the shortest piece is this share of the tallest
+
+
+def photo_rows(image: Image.Image, **kw) -> list[Image.Image] | None:
+    """Lines of a photo of paper (real-006): vignetting and grain leave ink in every row of the
+    background-difference mask, so no row is blank and the whole clip is one strip. Only for a
+    clip with no blank row that is several glyphs tall: ink is re-measured as pixels darker than
+    their neighbourhood (adaptive threshold) and the clip is cut at the valleys of that row
+    profile (outer 5% of columns ignored). None unless that finds >= 2 lines of similar height.
+    Mirrors apps/desktop preprocess.photo_rows."""
+    m = ink_mask(image, scan_max=None, robust_bg=kw.get("robust_bg", False), local_bg=kw.get("local_bg", False))
+    if m is None:
+        return None
+    mask = text_mask(m[0])[0]
+    g = glyph_height(components(mask)[1])
+    if not g or not mask.any(axis=1).all() or image.height < PHOTO_TALL * g:
+        return None
+    lum = np.asarray(image.convert("RGB"), dtype=np.float64).mean(axis=2)
+    r = PHOTO_RADIUS
+    local = box_mean(lum[..., None], r)[..., 0] / box_mean(np.ones(lum.shape + (1,)), r)[..., 0]
+    dark = lum < local - PHOTO_DARKER
+    h, w = dark.shape
+    prof = np.convolve(dark[:, int(0.05 * w):int(0.95 * w)].mean(axis=1), np.ones(3) / 3, "same")
+    top = prof.max()
+    if top <= 0:
+        return None
+    low = prof <= PHOTO_VALLEY * top
+    runs, y = [], 0
+    while y < h:
+        if low[y]:
+            y += 1
+            continue
+        start = y
+        while y < h and not low[y]:
+            y += 1
+        if prof[start:y].max() >= PHOTO_GRAIN * top:
+            runs.append((start, y - 1))
+    if len(runs) < 2:
+        return None
+    cuts = [0] + [(runs[k][1] + runs[k + 1][0] + 1) // 2 for k in range(len(runs) - 1)] + [h]
+    heights = [cuts[k + 1] - cuts[k] for k in range(len(runs))]
+    if min(heights) < PHOTO_EVEN * max(heights):
+        return None
+    return [image.crop((0, cuts[k], image.width, cuts[k + 1])) for k in range(len(runs))]
+
+
 COLUMN_TALL = 5.0  # a strip this many x the typical glyph height holds several lines ...
 COLUMN_GAP = 2.0   # ... and is cut at its widest blank column band, if at least this x glyph height wide
 
@@ -720,10 +771,12 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
     strips = line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
                                                drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg,
                                                letters_all=letters_all, max_gap=max_gap)
-    if columns and len(strips) > 1:  # one strip: a single line (word gaps are not a gutter)
-        kw = dict(robust_bg=robust_bg, drop_noise=drop_noise, drop_edge=drop_edge, local_bg=local_bg,
-                  letters_all=letters_all, max_gap=max_gap)
+    kw = dict(robust_bg=robust_bg, drop_noise=drop_noise, drop_edge=drop_edge, local_bg=local_bg,
+              letters_all=letters_all, max_gap=max_gap)
+    if columns and len(strips) > 1:  # one strip: a single line (word gaps are not a gutter) ...
         strips = [c for st in strips for c in split_columns(st, **kw)]
+    elif columns:  # ... unless it is a photo of several lines
+        strips = photo_rows(image, **kw) or strips
     for k, strip in enumerate(strips):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
