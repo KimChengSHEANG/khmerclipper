@@ -86,12 +86,12 @@ def is_busy(image: Image.Image, scan_max: int | None = 512, robust_bg: bool = Fa
 SPECKLE = 0.35  # a busy clip's run whose tallest component is below this x the clip's tallest is texture
 
 
-def letter_runs(mask: np.ndarray, runs: list[list[int]]) -> list[list[int]]:
+def letter_runs(mask: np.ndarray, runs: list[list[int]], ref=max) -> list[list[int]]:
     """Runs that hold a letter-sized component. On busy clips, paper grain and wood texture can
     form a run of their own, which the model fills with invented words (printed-087)."""
     _, boxes = components(mask)
     tall = [max([b[3] - b[1] + 1 for b in boxes if b[1] >= lo - 2 and b[3] <= hi + 2], default=0) for lo, hi in runs]
-    return [r for r, t in zip(runs, tall) if t >= SPECKLE * max(tall)]
+    return [r for r, t in zip(runs, tall) if t >= SPECKLE * ref(tall)]
 
 
 def band_varies(px: np.ndarray, share: float = 0.75) -> bool:
@@ -428,7 +428,7 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
 
 def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: bool = False,
                 drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
-                local_bg: bool = False) -> list[Image.Image]:
+                local_bg: bool = False, letters_all: bool = False) -> list[Image.Image]:
     """Port of Swift `TrOCREngine.lineStrips`: runs of inked rows, detached marks merged in,
     strips extended halfway into the gaps.
 
@@ -470,8 +470,11 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
         runs = split
     runs = merge_marks(runs)
     keep = drop_edge_fragments(runs, mask.shape[0], mask.sum(axis=1)) if drop_edge else runs
-    if local_bg and len(runs) > 1 and is_busy(image, scan_max=None if split_touching else 512, robust_bg=robust_bg):
-        keep = [r for r in keep if r in letter_runs(mask, runs)]
+    if local_bg and len(runs) > 1:
+        busy = is_busy(image, scan_max=None if split_touching else 512, robust_bg=robust_bg)
+        if busy or letters_all:
+            letters = letter_runs(mask, runs, max if busy else lambda t: float(np.median(t)))
+            keep = [r for r in keep if r in letters]
     if len(runs) <= 1:
         return [image]
     mh = mask.shape[0]
@@ -631,11 +634,12 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
               crop: bool = False, beam_gate: float | None = None, normalize: bool = False,
               split_touching: bool = False, cycle_cap: bool = False, robust_bg: bool = False,
               drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
-              local_bg: bool = False) -> str:
+              local_bg: bool = False, letters_all: bool = False) -> str:
     device = device or default_device()
     units: list[tuple[str, Image.Image]] = []  # (separator before, image to decode)
     for k, strip in enumerate(line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
-                                               drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg)):
+                                               drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg,
+                                               letters_all=letters_all)):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
         pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg) if split_wide_at else [("", strip)]

@@ -103,3 +103,31 @@ the identical ones: the machine was busier during this run.)
 - 034: one Latin word on a texture split in two. 035: faint text on grey (the generator's low-contrast case).
 Next lever is probably per-row background (the panels vary mostly along x) or labelled real captures to tell
 which of these patterns users actually hit.
+
+## Border-only strips on clean clips (2026-10-27)
+
+noisy_chrome misses were extra strips holding only a button outline or divider piece ("| USB-C | lum", "USB-C ══ ឬ").
+The letter-size check now runs on every clip: a run is dropped when its tallest component is under 0.35x the tallest
+run's (busy clips) or the median run's (other clips, where a blob of leaked background can be the tallest; with the
+tallest as reference noisy-background-032 lost two real lines). Strip counts: chrome 46 -> 48 of 50, real-007 5 -> 3
+(its 3 text lines), nothing else changed.
+
+| Run | frozen | screen | slices | noisy chrome | other noisy kinds | real 4 |
+|---|---|---|---|---|---|---|
+| PyTorch pipeline (3090) | 36 = 36 | 716 = 716 | 164 = 164 | 165 -> 156 (-5.5%, 2 / 0) | identical | - |
+| On device (Mac) | 12 = 12 | - | - | 171 -> 162 (-5.3%, 2 / 0) | identical | 12 = 12 |
+
+## Desktop end to end (ONNX, shipped `khmer-v3-kv-int8`), this morning vs all of today's preprocessing
+
+| Set | errors | change | better / worse |
+|---|---:|---:|---:|
+| frozen 200 | 11 -> 12 | +1 char | 1 / 1 |
+| screen 450 | 726 = 726 | 0 | 0 / 0 |
+| slices 320 | 163 = 163 | 0 | 0 / 0 |
+| noisy 300 | 3231 -> 2197 | **-32.0%** | 47 / 1 |
+| - background | 1441 -> 484 | -66.4% | 21 / 1 |
+| - icons | 350 -> 291 | -16.9% | 20 / 0 |
+| - chrome | 170 -> 157 | -7.6% | 4 / 0 |
+| - avatar | 246 -> 241 | -2.0% | 2 / 0 |
+| - edgecut, underline | | 0 | 0 / 0 |
+| real 4 | 12 = 12 | 0 | 0 / 0 |

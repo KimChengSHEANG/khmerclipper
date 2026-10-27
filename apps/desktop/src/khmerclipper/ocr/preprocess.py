@@ -20,7 +20,7 @@ SIZE = 384              # TrOCR ViT input
 class InkMask:
     ink: np.ndarray  # bool, shape (h, w)
     scale: int       # mask coords * scale = full-res coords
-    busy: bool = False  # over BUSY_INK ink: measured locally, texture-only runs dropped (letter_runs)
+    busy: bool = False  # over BUSY_INK ink: measured locally; letter_runs compares with the tallest run
 
 
 def background_color(px: np.ndarray) -> np.ndarray:
@@ -99,15 +99,18 @@ def local_ink_mask(px: np.ndarray, mask: np.ndarray, rounds: int = 3) -> np.ndar
     return mask
 
 
-SPECKLE = 0.35  # a busy clip's run whose tallest component is below this x the clip's tallest is texture
+SPECKLE = 0.35  # a run whose tallest component is below this x the reference run's is not text
 
 
-def letter_runs(mask: np.ndarray, runs: list[list[int]]) -> list[list[int]]:
-    """Runs that hold a letter-sized component. On busy clips, paper grain and wood texture can
-    form a run of their own, which the model fills with invented words."""
+def letter_runs(mask: np.ndarray, runs: list[list[int]], busy: bool) -> list[list[int]]:
+    """Runs that hold a letter-sized component, measured against the tallest run on busy clips
+    and the median run otherwise (a blob of leaked background can be the tallest there). Paper
+    grain, wood texture, a button border or a divider can form a run of their own, which the
+    model fills with invented words (eval: noisy_chrome -5.5%, results/busy_background.md)."""
     _, boxes = components(mask)
     tall = [max([b[3] - b[1] + 1 for b in boxes if b[1] >= lo - 2 and b[3] <= hi + 2], default=0) for lo, hi in runs]
-    return [r for r, t in zip(runs, tall) if t >= SPECKLE * max(tall)]
+    ref = max(tall) if busy else float(np.median(tall))
+    return [r for r, t in zip(runs, tall) if t >= SPECKLE * ref]
 
 
 def clip_background(px: np.ndarray, robust_bg: bool = True) -> np.ndarray:
@@ -414,8 +417,9 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
         runs = split
     runs = merge_marks(runs)
     keep = drop_edge_fragments(runs, mask.ink.shape[0], counts)  # lines the selection sliced through
-    if mask.busy and len(runs) > 1:
-        keep = [r for r in keep if r in letter_runs(mask.ink, runs)]
+    if len(runs) > 1:
+        letters = letter_runs(mask.ink, runs, mask.busy)
+        keep = [r for r in keep if r in letters]
     if len(runs) <= 1:
         return [image]
 

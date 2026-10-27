@@ -298,7 +298,7 @@ enum TrOCREngine {
     private struct InkMask {
         var ink: [Bool]
         let width: Int, height: Int, scale: Int
-        var busy = false  // over busyInk ink: measured locally, texture-only runs dropped (letterRuns)
+        var busy = false  // over busyInk ink: measured locally; letterRuns compares with the tallest run
         subscript(x: Int, y: Int) -> Bool { ink[y * width + x] }
     }
 
@@ -413,16 +413,24 @@ enum TrOCREngine {
         return mask
     }
 
-    /// Runs that hold a letter-sized component. On busy clips, paper grain and wood
-    /// texture can form a run of their own, which the model fills with invented
-    /// words. Mirrors pipeline.letter_runs.
-    static func letterRuns(_ m: [Bool], width w: Int, height h: Int, runs: [(lo: Int, hi: Int)]) -> [(lo: Int, hi: Int)] {
+    /// Runs that hold a letter-sized component, measured against the tallest run on
+    /// busy clips and the median run otherwise (a blob of leaked background can be the
+    /// tallest there). Paper grain, a button border or a divider can form a run of its
+    /// own, which the model fills with invented words. Mirrors pipeline.letter_runs.
+    static func letterRuns(_ m: [Bool], width w: Int, height h: Int, runs: [(lo: Int, hi: Int)],
+                           busy: Bool) -> [(lo: Int, hi: Int)] {
         let boxes = components(m, width: w, height: h).boxes
         let tall = runs.map { run in
             boxes.filter { $0.y0 >= run.lo - 2 && $0.y1 <= run.hi + 2 }.map { $0.y1 - $0.y0 + 1 }.max() ?? 0
         }
-        let top = Double(tall.max() ?? 0)
-        return zip(runs, tall).filter { Double($0.1) >= speckle * top }.map(\.0)
+        let ref: Double
+        if busy {
+            ref = Double(tall.max() ?? 0)
+        } else {  // numpy median: mean of the two middle values for an even count
+            let s = tall.sorted(), n = s.count
+            ref = n % 2 == 1 ? Double(s[n / 2]) : Double(s[n / 2 - 1] + s[n / 2]) / 2
+        }
+        return zip(runs, tall).filter { Double($0.1) >= speckle * ref }.map(\.0)
     }
 
     static let inkThreshold = 40
@@ -696,8 +704,8 @@ enum TrOCREngine {
         }
         runs = mergeMarks(runs)
         var keep = dropEdgeFragments(runs, height: mask.height, profile: counts)  // lines the selection sliced through
-        if mask.busy && runs.count > 1 {
-            let letters = letterRuns(mask.ink, width: mask.width, height: mask.height, runs: runs)
+        if runs.count > 1 {
+            let letters = letterRuns(mask.ink, width: mask.width, height: mask.height, runs: runs, busy: mask.busy)
             keep = keep.filter { k in letters.contains { $0 == k } }
         }
         guard runs.count > 1 else { return [image] }

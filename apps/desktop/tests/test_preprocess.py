@@ -169,3 +169,16 @@ def test_band_varies_on_a_gradient_not_on_a_flat_clip_with_edge_glyphs():
     assert not band_varies(flat)
     t = np.linspace(0, 1, 100)[None, :, None]
     assert band_varies((np.array([235, 235, 245]) * (1 - t) + np.array([150, 160, 215]) * t).repeat(64, axis=0).astype(int))
+
+
+def test_line_strips_drops_a_border_only_run_on_a_clean_clip():
+    # A text line and, below it, a run made only of short 2 px dashes (a broken button outline):
+    # tall enough not to merge as marks, but no letter-sized component, so it never becomes a
+    # strip the model invents words for (noisy-chrome-034).
+    img = Image.new("RGB", (400, 120), "white")
+    draw = ImageDraw.Draw(img)
+    for x in range(20, 380, 12):
+        draw.rectangle((x, 20, x + 8, 44), fill="black")
+    for i in range(9):
+        draw.rectangle((40 + 30 * i, 96 + i, 51 + 30 * i, 97 + i), fill="black")
+    assert [s.size for s in line_strips(img)] == [(400, 70)]

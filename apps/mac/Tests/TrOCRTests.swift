@@ -226,6 +226,24 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(TrOCREngine.dropStraySymbols(">"), ">")
     }
 
+    /// Mirrors apps/desktop test_line_strips_drops_a_border_only_run_on_a_clean_clip.
+    func testLineStripsDropsABorderOnlyRunOnACleanClip() throws {
+        let width = 400, height = 120
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.setFillColor(.black)
+        func box(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) {
+            ctx.fill(CGRect(x: x0, y: height - 1 - y1, width: x1 - x0 + 1, height: y1 - y0 + 1))
+        }
+        for x in stride(from: 20, to: 380, by: 12) { box(x, 20, x + 8, 44) }
+        for i in 0..<9 { box(40 + 30 * i, 96 + i, 51 + 30 * i, 97 + i) }  // short 2 px dashes
+        let strips = TrOCREngine.lineStrips(try XCTUnwrap(ctx.makeImage()))
+        XCTAssertEqual(strips.map(\.height), [70])
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)
