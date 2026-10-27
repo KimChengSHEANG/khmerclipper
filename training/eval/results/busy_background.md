@@ -179,3 +179,9 @@ that tested the capture tool on 2026-10-25/26, saved because "Keep capture image
 `fixtures_real/labels.jsonl` as not real use. The user's own Khmer captures with readable text (016, 021, 023, 029) got
 drafts re-read from the image; 001 and 006 (blurry / stylised Khmer) are left for the user. Nothing was marked
 verified.
+
+real-006 (the user's photo of a printed notice: paper ~145, vignetted corners ~126, three lines) still reads as one
+squashed strip: the corner colour leaks into every row, and the clip is under 30% ink with an edge band that looks
+uniform, so the local background is not used. Also using it when no row of the mask is blank changed no real capture
+(even the local mask keeps 1-3% ink in the gaps) and split printed-031; not kept. Needs a pitch-based cut on the local
+mask's row profile, or photo-specific handling.
