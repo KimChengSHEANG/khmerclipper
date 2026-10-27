@@ -32,7 +32,7 @@ class Reference(torch.nn.Module):
 
 
 class Encoder(torch.nn.Module):
-    """Image -> the decoder's cross-attention K/V (2 x [L, 1, H, S, D]), once per line."""
+    """Images -> the decoder's cross-attention K/V (2 x [L, B, H, S, D]), once per line."""
 
     def __init__(self, model):
         super().__init__()
@@ -46,18 +46,19 @@ class Encoder(torch.nn.Module):
         return torch.stack(ks), torch.stack(vs)
 
 
-def heads(attn, x):  # [1, T, E] -> [1, H, T, D]
-    return x.view(1, -1, attn.num_heads, attn.head_dim).transpose(1, 2)
+def heads(attn, x):  # [B, T, E] -> [B, H, T, D]
+    return x.view(x.shape[0], -1, attn.num_heads, attn.head_dim).transpose(1, 2)
 
 
 def attend(attn, q, k, v):
     out = (q @ k.transpose(-1, -2)).softmax(dim=-1) @ v
-    return out.transpose(1, 2).reshape(1, -1, attn.num_heads * attn.head_dim)
+    return out.transpose(1, 2).reshape(out.shape[0], -1, attn.num_heads * attn.head_dim)
 
 
 class DecoderStep(torch.nn.Module):
-    """One token per call: self-attention K/V of the earlier tokens come in as past_k/past_v
-    ([L, 1, H, t, D], t = 0 on the first step) and go out one longer. Re-implements
+    """One token per line per call, B lines in lockstep: self-attention K/V of the earlier
+    tokens come in as past_k/past_v ([L, B, H, t, D], t = 0 on the first step) and go out one
+    longer; `position` is shared. Re-implements
     transformers' TrOCRDecoder layer (post-LN) like the mac app's kv_decoder.py."""
 
     def __init__(self, model):
@@ -143,17 +144,23 @@ def main() -> None:
     # logits afterwards, so a post-export reference reports a bogus divergence.
     with torch.no_grad():
         ref = Reference(model)(pixel, torch.tensor([seq])).numpy()[0]
+        pixel2 = torch.cat([pixel, torch.rand(1, 3, img, img)])  # batch-2 parity below
+        ref2 = Reference(model)(pixel2[1:], torch.tensor([seq])).numpy()[0]
         cross_k, cross_v = enc(pixel)
         past = torch.zeros(cross_k.shape[0], 1, cross_k.shape[2], 1, cross_k.shape[4])
         example = (torch.tensor([[100]]), torch.tensor([1]), cross_k, cross_v, past, past)
 
+    # Batch axis dynamic on both: the app decodes a capture's lines together (one weight read
+    # per step for all of them; batch-1 CPU decode is memory-bound).
     torch.onnx.export(enc, (pixel,), out / "encoder.onnx", input_names=["pixel_values"],
-                      output_names=["cross_k", "cross_v"], opset_version=17, dynamo=False)
+                      output_names=["cross_k", "cross_v"], opset_version=17, dynamo=False,
+                      dynamic_axes={"pixel_values": {0: "b"}, "cross_k": {1: "b"}, "cross_v": {1: "b"}})
     torch.onnx.export(dec, example, out / "decoder.onnx",
                       input_names=["input_ids", "position", "cross_k", "cross_v", "past_k", "past_v"],
                       output_names=["logits", "present_k", "present_v"],
-                      dynamic_axes={"past_k": {3: "t"}, "past_v": {3: "t"},
-                                    "present_k": {3: "t1"}, "present_v": {3: "t1"}},
+                      dynamic_axes={"input_ids": {0: "b"}, "cross_k": {1: "b"}, "cross_v": {1: "b"},
+                                    "past_k": {1: "b", 3: "t"}, "past_v": {1: "b", 3: "t"},
+                                    "logits": {0: "b"}, "present_k": {1: "b", 3: "t1"}, "present_v": {1: "b", 3: "t1"}},
                       opset_version=17, dynamo=False)
     export_tokenizer(processor, model, out / "tokenizer.json")
 
@@ -166,6 +173,13 @@ def main() -> None:
         logits, pk, pv = step.run(None, {"input_ids": np.array([[tok]]), "position": np.array([pos]),
                                          "cross_k": ck, "cross_v": cv, "past_k": pk, "past_v": pv})
         diff = max(diff, float(np.abs(logits[0, 0] - ref[pos]).max()))
+    # Batch of two (the first image again plus another): each row must match its own batch-1 run.
+    ck, cv = ort.InferenceSession(str(out / "encoder.onnx")).run(None, {"pixel_values": pixel2.numpy()})
+    pk = pv = np.zeros((ck.shape[0], 2, ck.shape[2], 0, ck.shape[4]), np.float32)
+    for pos, tok in enumerate(seq):
+        logits, pk, pv = step.run(None, {"input_ids": np.array([[tok], [tok]]), "position": np.array([pos]),
+                                         "cross_k": ck, "cross_v": cv, "past_k": pk, "past_v": pv})
+        diff = max(diff, float(np.abs(logits[0, 0] - ref[pos]).max()), float(np.abs(logits[1, 0] - ref2[pos]).max()))
     print(f"parity max abs diff: {diff:.2e}")
     if diff > PARITY_TOLERANCE:
         raise SystemExit(f"ONNX output diverges from torch ({diff:.2e} > {PARITY_TOLERANCE})")

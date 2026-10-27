@@ -15,3 +15,25 @@ Latency is wall-clock on a laptop in use, so compare within a row.
 Built with `apps/desktop/tools/quantize_model.py` (deterministic: same decoder SHA-256 on rebuild).
 The decoder is ~70% of the fp32 weights: its 52M-weight token embedding is stored twice (input
 embedding and output projection), and every decode step reads the projection.
+
+## Lines decoded as one batch (2026-10-27)
+
+`tools/export_onnx.py` now exports a dynamic batch axis (parity at batch 1 and 2: max abs diff 3.0e-5), and
+`trocr.recognize_with_session` decodes up to 4 pieces of a capture together in lockstep. Batch-1 CPU decode is
+memory-bound (every step reads all weights for one token), so a batch costs about one line. Models with a fixed
+batch axis (`khmer-v3-kv-int8`, shipped) fall back to one piece at a time; on the frozen set that gives exactly the
+old text apart from the two clips results/busy_background.md changed.
+
+int8 decoder, unbatched (`khmer-v3-kv-int8`) vs batched (`khmer-v3-kvb-int8`), both with the local-background change
+except where noted:
+
+| Set | errors | change | median ms |
+|---|---:|---:|---|
+| frozen 200 | 11 -> 11 | 2 / 1 | 405 -> 344 |
+| screen 450 | 726 -> 729 | +0.4% (3 / 5) | 1187 -> 869 (-27%) |
+| slices 320 | 163 -> 162 | 2 / 1 | 596 -> 537 |
+| noisy 300 | 3231 -> 2387 | -26.1% (mostly local background) | 1080 -> 945 |
+| real 4 | 12 -> 12 | 0 | 575 -> 567 |
+
+Batched texts differ slightly because dynamic int8 quantizes activations with one scale per batch; errors stay
+within the bars. Not shipped until `khmer-v3-kvb-int8` is published to the model repo.

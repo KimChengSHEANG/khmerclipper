@@ -27,3 +27,10 @@ Stage 2 KV-cache FP16 (2026-10-03): default app compute units `.cpuAndGPU`
 stateful KV decoder; not benchmarked. Steps 3–4 (encoder FP32 / int8) skipped —
 stage-2 CER matches stage 1 and median is well under 2× Tesseract. Gate fails
 only on mixed-subset CER (see `mac_gate.md`).
+
+## Int8 decoder weights on Mac (2026-10-27): dropped
+
+`coremltools.optimize.coreml.linear_quantize_weights` (linear symmetric, per channel) on the shipped v3 KV decoder:
+436 MB -> 219 MB and identical decode steps on 60 screen clips, but 21.9 ms per step vs 7.2 ms in fp16 on
+`.cpuAndGPU` (median clip 852 ms vs 315 ms). The GPU dequantizes on every step, which costs more than the halved
+weight reads save. (On desktop ONNX CPU the int8 decoder is a win: results/desktop_int8.md.)

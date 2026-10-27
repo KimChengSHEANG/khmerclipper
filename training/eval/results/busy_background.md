@@ -44,3 +44,8 @@ on 1,300 / 1,300 (boxes within 2 px on 1,250, the existing CoreGraphics vs PIL d
 - A light card inside a white margin (real-003, 4 lines) stays one strip: starting from the margin, the whole card is
   ink. Starting from the plain window mean finds its lines but breaks dense clean clips; needs a test that tells
   the two apart.
+
+## PyTorch app pipeline (3090), v3, gate5 run vs this change
+
+frozen 35 -> 36 (1 / 1), screen 716 = 716, slices 164 = 164, noisy 3208 -> 2370 (-26.1%; background 1438 -> 600,
+-58.3%, 17 better / 1 worse; every other noise kind identical).

@@ -18,13 +18,14 @@ TOKENIZER = TrOCRTokenizer({"kind": "bpe", "bos_id": 0, "eos_id": 2, "pad_id": 1
 
 class FakeEncoder:
     def run(self, names, feeds):
-        assert feeds["pixel_values"].shape == (1, 3, 384, 384)
-        cross = np.zeros((2, 1, 2, 4, 3), np.float32)  # [L, 1, H, S, D]
+        b = feeds["pixel_values"].shape[0]
+        assert feeds["pixel_values"].shape == (b, 3, 384, 384)
+        cross = np.zeros((2, b, 2, 4, 3), np.float32)  # [L, B, H, S, D]
         return [cross, cross]
 
 
 class ScriptedDecoder:
-    """Emits script[position] as the next token (last entry repeats), growing the cache by one."""
+    """Emits script[position] as every row's next token (last entry repeats), growing the cache by one."""
 
     def __init__(self, script):
         self.script, self.calls = script, 0
@@ -32,16 +33,17 @@ class ScriptedDecoder:
     def run(self, names, feeds):
         self.calls += 1
         ids, pos, past = feeds["input_ids"], int(feeds["position"][0]), feeds["past_k"]
-        assert ids.dtype == np.int64 and ids.shape == (1, 1)
+        b = feeds["cross_k"].shape[1]
+        assert ids.dtype == np.int64 and ids.shape == (b, 1) and past.shape[1] == b
         assert past.shape[3] == pos  # one cached row per earlier token
-        logits = np.zeros((1, 1, 6), np.float32)
-        logits[0, -1, self.script[min(pos, len(self.script) - 1)]] = 1.0
+        logits = np.zeros((b, 1, 6), np.float32)
+        logits[:, -1, self.script[min(pos, len(self.script) - 1)]] = 1.0
         grown = np.zeros((*past.shape[:3], pos + 1, past.shape[4]), np.float32)
         return [logits, grown, grown]
 
 
-def session(script):
-    return SimpleNamespace(encoder=FakeEncoder(), decoder=ScriptedDecoder(script), tokenizer=TOKENIZER)
+def session(script, batch=trocr.BATCH):
+    return SimpleNamespace(encoder=FakeEncoder(), decoder=ScriptedDecoder(script), tokenizer=TOKENIZER, batch=batch)
 
 
 def lines_image(n):
@@ -57,6 +59,12 @@ def test_greedy_decode_until_eos():
 
 def test_each_line_decoded_and_joined_with_newline():
     s = session([4, 5, 2])
+    assert trocr.recognize_with_session(s, lines_image(2)) == "កខ\nកខ"
+    assert s.decoder.calls == 3  # both lines in one batch, in lockstep
+
+
+def test_fixed_batch_model_decodes_one_line_at_a_time():
+    s = session([4, 5, 2], batch=1)
     assert trocr.recognize_with_session(s, lines_image(2)) == "កខ\nកខ"
     assert s.decoder.calls == 6
 
