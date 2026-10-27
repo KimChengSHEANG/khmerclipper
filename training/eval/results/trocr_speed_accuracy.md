@@ -34,3 +34,9 @@ only on mixed-subset CER (see `mac_gate.md`).
 436 MB -> 219 MB and identical decode steps on 60 screen clips, but 21.9 ms per step vs 7.2 ms in fp16 on
 `.cpuAndGPU` (median clip 852 ms vs 315 ms). The GPU dequantizes on every step, which costs more than the halved
 weight reads save. (On desktop ONNX CPU the int8 decoder is a win: results/desktop_int8.md.)
+
+## Encoder on the Neural Engine, decoder on the GPU (2026-10-27): no gain
+
+Separate compute units per model (encoder `.cpuAndNeuralEngine` or `.all`, decoder `.cpuAndGPU`), 60 screen clips,
+two runs each: median 346-381 ms vs 350-357 ms with both on the GPU, identical text. Encoding is not the
+bottleneck the overlap would hide; not kept.
