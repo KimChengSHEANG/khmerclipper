@@ -437,7 +437,10 @@ def split_columns(strip: Image.Image, depth: int = 2) -> list[Image.Image]:
             x += 1
     width, a, b = best
     if width < COLUMN_GAP * g:
-        return [strip]
+        # No gutter: split the strip into lines on its own, against its own background (the
+        # whole clip's misread joined the 5 lines of a chat bubble in real-008).
+        rows = row_strips(strip)
+        return [c for line in rows for c in split_columns(line, depth - 1)] if len(rows) > 1 else [strip]
     cut = (a + b) // 2
     out = []
     for part in (strip.crop((0, 0, cut, strip.height)), strip.crop((cut, 0, strip.width, strip.height))):

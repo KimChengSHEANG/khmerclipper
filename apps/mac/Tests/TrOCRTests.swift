@@ -285,6 +285,21 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(Set(parts.prefix(4).map(\.width)).count, 1)  // the left column's 4 lines first
     }
 
+    /// Mirrors apps/desktop test_split_columns_resplits_a_tall_strip_without_a_gutter.
+    func testSplitColumnsResplitsATallStripWithoutAGutter() throws {
+        let width = 900, height = 260
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.setFillColor(.black)
+        for top in [10, 60, 110, 160, 210] {
+            for x in stride(from: 20, to: 860, by: 14) { ctx.fill(CGRect(x: x, y: height - 1 - (top + 22), width: 10, height: 23)) }
+        }
+        XCTAssertEqual(TrOCREngine.splitColumns(try XCTUnwrap(ctx.makeImage())).count, 5)
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)

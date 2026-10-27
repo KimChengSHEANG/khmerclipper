@@ -228,3 +228,16 @@ def test_split_columns_reads_a_multi_line_strip_column_by_column():
     assert len(parts) == 7 and all(p.width < 900 for p in parts)
     assert [p.width for p in parts][:4] == [parts[0].width] * 4  # the left column's 4 lines first
     assert len(split_columns(img.crop((0, 0, 900, 40)))) == 1
+
+
+def test_split_columns_resplits_a_tall_strip_without_a_gutter():
+    # Five separated lines that came out as one strip of the whole clip (real-008's chat bubble):
+    # no gutter, so the strip is split into lines again on its own.
+    from khmerclipper.ocr.preprocess import split_columns
+
+    img = Image.new("RGB", (900, 260), "white")
+    draw = ImageDraw.Draw(img)
+    for top in (10, 60, 110, 160, 210):
+        for x in range(20, 860, 14):
+            draw.rectangle((x, top, x + 9, top + 22), fill="black")
+    assert len(split_columns(img)) == 5

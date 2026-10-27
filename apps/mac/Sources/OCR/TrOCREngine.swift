@@ -703,7 +703,12 @@ enum TrOCREngine {
                 x += 1
             }
         }
-        guard Double(best.width) >= columnGap * g else { return [strip] }
+        guard Double(best.width) >= columnGap * g else {
+            // No gutter: split the strip into lines on its own, against its own background (the
+            // whole clip's misread joined the 5 lines of a chat bubble in real-008).
+            let rows = rowStrips(strip)
+            return rows.count > 1 ? rows.flatMap { splitColumns($0, depth: depth - 1) } : [strip]
+        }
         let cut = (best.a + best.b) / 2
         let parts = [CGRect(x: 0, y: 0, width: cut, height: strip.height),
                      CGRect(x: cut, y: 0, width: strip.width - cut, height: strip.height)].compactMap { strip.cropping(to: $0) }

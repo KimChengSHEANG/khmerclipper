@@ -207,3 +207,8 @@ Good word completion on any Mac. - 396,7 MB / Commit and push the capture cursor
 top chat bubble, whose outline joins its rows, is still garbled. Every eval set is identical on device (frozen 12,
 screen 734, slices 165, noisy 1816, real 12). Desktop strips equal eval on 1,300 / 1,300; Mac piece counts equal
 desktop on 1,300 / 1,300.
+Follow-up: the top chat bubble of real-008 (five separated lines) was still one strip: against the whole clip's
+background its line gaps vanished, while on its own the strip splits into its five lines. A tall strip without a
+gutter is now split into lines again on its own. Pieces changed only on real-008 (47 -> 54 on desktop; Mac and desktop
+piece counts still equal on 1,300 / 1,300), which now reads in full from "The capture readout now uses small, thin
+digits next to the macOS crosshair..." through the panel.
