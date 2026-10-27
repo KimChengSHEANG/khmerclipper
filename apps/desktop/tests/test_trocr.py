@@ -153,3 +153,10 @@ def test_latin_fallback_gets_the_noise_free_crop(monkeypatch):
     seen.clear()
     trocr.latin_fallback(img, "កខ")
     assert not seen  # Khmer lines never pay for the crop
+
+
+def test_drop_stray_symbols_trims_icon_noise_at_line_ends():
+    assert trocr.drop_stray_symbols("* ស្ដេច រាជរថ & >") == "ស្ដេច រាជរថ"
+    assert trocr.drop_stray_symbols("ក = ខ") == "ក = ខ"  # inner symbols stay
+    assert trocr.drop_stray_symbols("ខ្មែរ។ (១)") == "ខ្មែរ។ (១)"  # brackets and punctuation are text
+    assert trocr.drop_stray_symbols(">") == ">"  # never empties a line

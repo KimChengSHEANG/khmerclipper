@@ -158,7 +158,7 @@ enum TrOCREngine {
             // Tesseract only when every word is confident. Lines with any Khmer
             // stay with TrOCR, which beats Tesseract on Khmer/mixed text.
             // ponytail: one tesseract process per Latin-only strip (~90ms each).
-            var text = line
+            var text = containsKhmer(line) ? dropStraySymbols(line) : line
             if !containsKhmer(line),
                let tess = try? await TesseractEngine.recognizeLine(in: contentCrop(strip)),
                !tess.text.isEmpty, tess.minConfidence >= tesseractMinConfidence {
@@ -245,6 +245,24 @@ enum TrOCREngine {
         stats.decoderMs = milliseconds(since: decodeStart)
         stats.decoderSteps = ids.count - 1
         return (tokenizer.decode(ids: ids), stats)
+    }
+
+    /// Icons and emoji at a line's ends come out as stray symbols ("... ។ > v", "* text &").
+    /// Drops leading / trailing words made only of symbols that rarely end real text;
+    /// applied to lines with Khmer (training/eval/results/busy_background.md: noisy_icons
+    /// -17%, no clip worse on any eval set). Mirrors desktop trocr.drop_stray_symbols.
+    static let straySymbols = Set("<>*&@^~|#`+=")
+    static func dropStraySymbols(_ line: String) -> String {
+        var words = line.split(separator: " ", omittingEmptySubsequences: false)
+        func stray(_ w: Substring) -> Bool { !w.isEmpty && w.allSatisfy { straySymbols.contains($0) } }
+        func nonEmpty() -> Int { words.filter { !$0.isEmpty }.count }
+        while nonEmpty() > 1, let i = words.firstIndex(where: { !$0.isEmpty }), stray(words[i]) {
+            words.removeSubrange(...i)
+        }
+        while nonEmpty() > 1, let i = words.lastIndex(where: { !$0.isEmpty }), stray(words[i]) {
+            words.removeSubrange(i...)
+        }
+        return words.joined(separator: " ")
     }
 
     /// Khmer (U+1780-17FF) or Khmer Symbols (U+19E0-19FF), the blocks the

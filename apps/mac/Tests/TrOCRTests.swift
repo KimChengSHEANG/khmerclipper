@@ -218,6 +218,14 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertTrue(TrOCREngine.bandVaries(grad, width: w, height: h))
     }
 
+    /// Mirrors apps/desktop test_drop_stray_symbols_trims_icon_noise_at_line_ends.
+    func testDropStraySymbolsTrimsIconNoiseAtLineEnds() {
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("* ស្ដេច រាជរថ & >"), "ស្ដេច រាជរថ")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("ក = ខ"), "ក = ខ")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("ខ្មែរ។ (១)"), "ខ្មែរ។ (១)")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols(">"), ">")
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)

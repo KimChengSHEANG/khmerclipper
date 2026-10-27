@@ -81,3 +81,15 @@ clip). Model, paired against the previous version:
 
 Against main before this work, on device: noisy_background 1439 -> 478 (-66.8%). Parity: desktop strips byte-identical
 to eval on 1,300 / 1,300; Mac piece counts equal desktop on 1,300 / 1,300.
+
+## Stray symbols from icons (2026-10-27)
+
+Icons and emoji at a line's ends (noisy_icons) come out as stray symbols ("... ។ > v", "* text &"). Both apps now drop
+leading / trailing words made only of `< > * & @ ^ ~ | # `` ` `` + =` on lines with Khmer (never emptying a line, inner
+spacing kept). Offline on the saved predictions, wider rules (any ASCII punctuation, bullets, single Latin letters)
+gained more on icons but broke screen clips that start with a real "O" or end in quotes; this set touched no clip
+outside the icon / chrome / avatar kinds.
+
+On device (Mac), vs the previous commit: noisy_icons 355 -> 296 (-16.6%, 20 / 0), avatar 240 -> 235, chrome 175 -> 171;
+frozen, screen, slices, background, edgecut, underline and real identical. (Medians rose on every set, including
+the identical ones: the machine was busier during this run.)

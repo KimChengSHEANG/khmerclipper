@@ -41,6 +41,24 @@ def contains_khmer(text: str) -> bool:
     return any("\u1780" <= c <= "\u17ff" or "\u19e0" <= c <= "\u19ff" for c in text)
 
 
+STRAY_SYMBOLS = set("<>*&@^~|#`+=")
+
+
+def drop_stray_symbols(line: str) -> str:
+    """Icons and emoji at a line's ends come out as stray symbols ("... ។ > v", "* text &"):
+    drop leading / trailing words made only of symbols that rarely end real text. For lines
+    with Khmer (training/eval/results/busy_background.md: noisy_icons -17%, no clip worse on
+    any eval set). Inner spacing is kept. Mirrors mac TrOCREngine.dropStraySymbols."""
+    def stray(word: str) -> bool:
+        return bool(word) and all(c in STRAY_SYMBOLS for c in word)
+
+    while len(words := line.split()) > 1 and stray(words[0]):
+        line = line.lstrip()[len(words[0]):].lstrip(" ")
+    while len(words := line.split()) > 1 and stray(words[-1]):
+        line = line.rstrip()[:-len(words[-1])].rstrip(" ")
+    return line
+
+
 def latin_fallback(strip: Image.Image, line: str) -> str:
     """The Khmer fine-tune misspells clean English UI text ("Warrantly", "PriceSnbox")
     that Tesseract reads perfectly, but Tesseract is worse on low-res scanned English.
@@ -160,6 +178,6 @@ def recognize_with_session(session, image: Image.Image, progress: Callable[[str]
         for (unit_k, sep, _), piece_text in zip(units, texts):
             if unit_k == k and piece_text:
                 text += (sep if text else "") + piece_text
-        if line := latin_fallback(strip, text):
+        if line := latin_fallback(strip, drop_stray_symbols(text) if contains_khmer(text) else text):
             lines.append(line)
     return "\n".join(lines)
