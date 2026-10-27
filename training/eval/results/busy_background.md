@@ -185,3 +185,7 @@ squashed strip: the corner colour leaks into every row, and the clip is under 30
 uniform, so the local background is not used. Also using it when no row of the mask is blank changed no real capture
 (even the local mask keeps 1-3% ink in the gaps) and split printed-031; not kept. Needs a pitch-based cut on the local
 mask's row profile, or photo-specific handling.
+
+real-001 is faint handwriting on lined paper (275x40, one strip, segmented correctly); the app reads it mostly right
+and misses the two greetings (ជំរាបសួរ / ជំរាបលា read as "ជាបសូវ" / "វែរាបណ"). A model limit on faint handwriting,
+not preprocessing.
