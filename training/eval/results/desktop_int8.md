@@ -24,8 +24,8 @@ memory-bound (every step reads all weights for one token), so a batch costs abou
 batch axis (`khmer-v3-kv-int8`, shipped) fall back to one piece at a time; on the frozen set that gives exactly the
 old text apart from the two clips results/busy_background.md changed.
 
-int8 decoder, unbatched (`khmer-v3-kv-int8`) vs batched (`khmer-v3-kvb-int8`), both with the local-background change
-except where noted:
+int8 decoder, unbatched (`khmer-v3-kv-int8`, measured before the local-background change) vs batched
+(`khmer-v3-kvb-int8`, after it; the noisy row's gain is that change, see results/busy_background.md):
 
 | Set | errors | change | median ms |
 |---|---:|---:|---|
