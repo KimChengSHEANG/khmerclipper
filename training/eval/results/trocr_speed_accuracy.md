@@ -40,3 +40,11 @@ weight reads save. (On desktop ONNX CPU the int8 decoder is a win: results/deskt
 Separate compute units per model (encoder `.cpuAndNeuralEngine` or `.all`, decoder `.cpuAndGPU`), 60 screen clips,
 two runs each: median 346-381 ms vs 350-357 ms with both on the GPU, identical text. Encoding is not the
 bottleneck the overlap would hide; not kept.
+
+## Batched decoder on Mac (2026-10-27 spike): not built
+
+A batch-4 stateful KV decoder (same conversion with a batch axis, fp16, `.cpuAndGPU`), timed with coremltools on
+the khmer v3 checkpoint: 10.3 ms per step at batch 1, 29.7 ms at batch 4 (7.4 ms per line-step). The app's 4
+concurrent batch-1 lines already overlap about 2x (60 screen clips: 39 s of summed decoder time in 20 s of wall time,
+~3.6 ms per line-step), so a batch would be slower. Unlike desktop CPU decode (memory-bound; batching -27%,
+results/desktop_int8.md), the GPU step is compute-bound: cross-attention over 577 patches per line scales with B.
