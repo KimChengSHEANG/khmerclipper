@@ -189,3 +189,5 @@ mask's row profile, or photo-specific handling.
 real-001 is faint handwriting on lined paper (275x40, one strip, segmented correctly); the app reads it mostly right
 and misses the two greetings (ជំរាបសួរ / ជំរាបលា read as "ជាបសូវ" / "វែរាបណ"). A model limit on faint handwriting,
 not preprocessing.
+Pitch cuts on the local mask don't reach it either: `line_pitch` finds no period in real-006's local row profile
+(three lines, one a short heading), and on printed-031 the local profile's pitch would cut one word into five pieces.
