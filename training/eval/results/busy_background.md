@@ -93,3 +93,13 @@ outside the icon / chrome / avatar kinds.
 On device (Mac), vs the previous commit: noisy_icons 355 -> 296 (-16.6%, 20 / 0), avatar 240 -> 235, chrome 175 -> 171;
 frozen, screen, slices, background, edgecut, underline and real identical. (Medians rose on every set, including
 the identical ones: the machine was busier during this run.)
+
+## The 8 background clips still miscounted (2026-10-27): no safe rule found
+
+- 038, 039: two tight lines on a warm gradient, 22-28% ink, edge band 81-83% one colour (just past the 0.75 cut-off).
+  The local mask opens a blank gap between the lines, but no trigger separates them from scanned paper: the local
+  / global ink ratio is 0.54-0.57 here and 0.29-0.63 on frozen printed clips, and share 0.85 changes an edgecut clip.
+- 002, 023, 047, 050: busy (local mask on), lines still merged; 050 is 96% ink.
+- 034: one Latin word on a texture split in two. 035: faint text on grey (the generator's low-contrast case).
+Next lever is probably per-row background (the panels vary mostly along x) or labelled real captures to tell
+which of these patterns users actually hit.
