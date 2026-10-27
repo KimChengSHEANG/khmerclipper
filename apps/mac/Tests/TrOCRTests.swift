@@ -244,6 +244,25 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(strips.map(\.height), [70])
     }
 
+    /// Mirrors apps/desktop test_line_strips_a_far_widget_does_not_collapse_the_lines (real-015).
+    func testLineStripsAFarWidgetDoesNotCollapseTheLines() throws {
+        let width = 800, height = 160
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        ctx.setFillColor(.black)
+        func box(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int) {
+            ctx.fill(CGRect(x: x0, y: height - 1 - y1, width: x1 - x0 + 1, height: y1 - y0 + 1))
+        }
+        box(700, 0, 760, 9)
+        for top in [51, 93, 135] {
+            for x in stride(from: 10, to: 740, by: 14) { box(x, top, x + 9, min(159, top + 28)) }
+        }
+        XCTAssertGreaterThanOrEqual(TrOCREngine.lineStrips(try XCTUnwrap(ctx.makeImage())).count, 3)
+    }
+
     func testLineStripsDropsATextureOnlyRunOnABusyClip() throws {
         let strips = TrOCREngine.lineStrips(try gradientBars([(120, 150)], grain: true))
         XCTAssertEqual(strips.count, 1)
@@ -540,6 +559,7 @@ final class TrOCRNoiseTests: XCTestCase {
         XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 4), (10, 30), (40, 60), (70, 79)], height: 80, profile: nil)), [[10, 30], [40, 60]])
         XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 22)], height: 23, profile: nil)), [[0, 22]])
         XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 20), (30, 50)], height: 51, profile: nil)), [[0, 20], [30, 50]])
-        XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 4), (70, 79)], height: 80, profile: nil)), [[0, 4], [70, 79]])
+        // Every run on an edge: judged against the tallest (noisy-edgecut-029), the 5-row sliver goes.
+        XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 4), (70, 79)], height: 80, profile: nil)), [[70, 79]])
     }
 }

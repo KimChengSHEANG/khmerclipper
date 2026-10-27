@@ -182,3 +182,15 @@ def test_line_strips_drops_a_border_only_run_on_a_clean_clip():
     for i in range(9):
         draw.rectangle((40 + 30 * i, 96 + i, 51 + 30 * i, 97 + i), fill="black")
     assert [s.size for s in line_strips(img)] == [(400, 70)]
+
+
+def test_line_strips_a_far_widget_does_not_collapse_the_lines():
+    # A 10-row toolbar widget 41 rows above three 29-row lines (real-015's runs): merged in as a
+    # "mark" it made an 80-row run, every real line then looked like a mark: one strip.
+    img = Image.new("RGB", (800, 160), "white")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((700, 0, 760, 9), fill="black")
+    for top in (51, 93, 135):
+        for x in range(10, 740, 14):
+            draw.rectangle((x, top, x + 9, min(159, top + 28)), fill="black")
+    assert len(line_strips(img)) >= 3

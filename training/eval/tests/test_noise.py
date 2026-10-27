@@ -97,6 +97,7 @@ def test_full_height_first_line_touching_edge_is_kept():
 
 def test_two_fragments_and_nothing_else_keeps_both():
     assert P.drop_edge_fragments([[0, 4], [70, 79]], 80) == [[0, 4], [70, 79]]  # no real line to compare with
+    assert P.drop_edge_fragments([[0, 4], [70, 79]], 80, tallest_ref=True) == [[70, 79]]  # the apps
 
 
 def test_drop_edge_removes_a_cut_line_from_line_strips():

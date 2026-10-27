@@ -230,11 +230,24 @@ def two_line_cut(profile: np.ndarray) -> int | None:
     return c
 
 
-def merge_marks(runs: list[list[int]]) -> list[list[int]]:
+MERGE_CAP = 2.0  # with max_gap: "tallest" never exceeds this x the tallest run before merging
+
+
+def merge_marks(runs: list[list[int]], max_gap: bool = False, counts: np.ndarray | None = None) -> list[list[int]]:
     """Swift lineStrips merge rule: a run < 35% of the tallest, or < 50% within a quarter of the
-    tallest's height of a neighbour, is a detached mark and joins its nearer neighbour."""
+    tallest's height of a neighbour, is a detached mark and joins its nearer neighbour.
+
+    max_gap (with the row ink `counts`): "tallest" counts only a run's inked rows. A toolbar
+    widget merged into the first line across a 40-row gap made an 80-row run, every real line
+    then looked like a mark, and the whole clip collapsed into one strip (real-015). Capped at
+    MERGE_CAP x the tallest run before merging: interleaved columns (real-008) fill a merged run
+    with real ink. A Khmer line with its marks is ~1.6x its base glyphs, inside the cap."""
+    def size(lo: int, hi: int) -> int:
+        return int((counts[lo:hi + 1] > 0).sum()) if max_gap and counts is not None else hi - lo + 1
+
+    cap = MERGE_CAP * max((hi - lo + 1 for lo, hi in runs), default=0) if max_gap else math.inf
     while len(runs) > 1:
-        tallest = max(hi - lo + 1 for lo, hi in runs)
+        tallest = min(cap, max(size(lo, hi) for lo, hi in runs))
 
         def gap(k: int) -> float:
             return min(runs[k][0] - runs[k - 1][1] if k > 0 else math.inf,
@@ -403,7 +416,8 @@ EDGE_FRAGMENT = 0.6  # an edge-touching run shorter than this x the median other
 EDGE_CUT = 0.5       # ... if its edge row is this dense vs its densest row (the cut sliced through glyphs)
 
 
-def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray | None = None) -> list[list[int]]:
+def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray | None = None,
+                        tallest_ref: bool = False) -> list[list[int]]:
     """Drop the first run when it touches the top edge, and the last when it touches the bottom,
     if it is shorter than EDGE_FRAGMENT x the median height of the runs not on an edge and (given
     the row-ink `profile`) its edge row is dense: what is left of a line the selection sliced
@@ -411,6 +425,10 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
     the only line or a full-height one."""
     inner = [hi - lo + 1 for k, (lo, hi) in enumerate(runs)
              if not (k == 0 and lo == 0) and not (k == len(runs) - 1 and hi == height - 1)]
+    if not inner and tallest_ref and len(runs) > 1:
+        # Every run touches an edge (a sliver merged into the top line, a cut line at the
+        # bottom: noisy-edgecut-029): judge the edge runs against the tallest one.
+        inner = [max(hi - lo + 1 for lo, hi in runs)]
     if not inner:
         return runs
     cut = EDGE_FRAGMENT * float(np.median(inner))
@@ -428,7 +446,7 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
 
 def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: bool = False,
                 drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
-                local_bg: bool = False, letters_all: bool = False) -> list[Image.Image]:
+                local_bg: bool = False, letters_all: bool = False, max_gap: bool = False) -> list[Image.Image]:
     """Port of Swift `TrOCREngine.lineStrips`: runs of inked rows, detached marks merged in,
     strips extended halfway into the gaps.
 
@@ -468,8 +486,8 @@ def line_strips(image: Image.Image, split_touching: bool = False, robust_bg: boo
             edges = [lo] + [lo + c for c in cuts] + [hi + 1]
             split += [[edges[k], edges[k + 1] - 1] for k in range(len(edges) - 1)]
         runs = split
-    runs = merge_marks(runs)
-    keep = drop_edge_fragments(runs, mask.shape[0], mask.sum(axis=1)) if drop_edge else runs
+    runs = merge_marks(runs, max_gap, mask.sum(axis=1))
+    keep = drop_edge_fragments(runs, mask.shape[0], mask.sum(axis=1), max_gap) if drop_edge else runs
     if local_bg and len(runs) > 1:
         busy = is_busy(image, scan_max=None if split_touching else 512, robust_bg=robust_bg)
         if busy or letters_all:
@@ -634,12 +652,12 @@ def recognize(image: Image.Image, model_dir: Path, device: str | None = None, *,
               crop: bool = False, beam_gate: float | None = None, normalize: bool = False,
               split_touching: bool = False, cycle_cap: bool = False, robust_bg: bool = False,
               drop_noise: bool = False, drop_edge: bool = False, fill_noise: bool = False,
-              local_bg: bool = False, letters_all: bool = False) -> str:
+              local_bg: bool = False, letters_all: bool = False, max_gap: bool = False) -> str:
     device = device or default_device()
     units: list[tuple[str, Image.Image]] = []  # (separator before, image to decode)
     for k, strip in enumerate(line_strips(image, split_touching, robust_bg=robust_bg, drop_noise=drop_noise,
                                                drop_edge=drop_edge, fill_noise=fill_noise, local_bg=local_bg,
-                                               letters_all=letters_all)):
+                                               letters_all=letters_all, max_gap=max_gap)):
         # No drop_noise here: noise filtering in split_wide changed no crop on the screen set and
         # doubled preprocessing time (results/noise_preprocessing.md).
         pieces = split_wide(strip, split_wide_at, robust_bg=robust_bg, local_bg=local_bg) if split_wide_at else [("", strip)]

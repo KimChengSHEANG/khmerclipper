@@ -13,6 +13,7 @@ from PIL import Image
 SCAN_MAX = 512
 THRESHOLD = 40          # per-channel difference from background that counts as ink
 MERGE_PERCENT = 35      # runs shorter than this % of the tallest merge into a neighbour
+MERGE_CAP = 2.0         # ... of a "tallest" that never exceeds this x the tallest run before merging
 SIZE = 384              # TrOCR ViT input
 
 
@@ -187,12 +188,22 @@ def two_line_cut(profile: np.ndarray) -> int | None:
     return c
 
 
-def merge_marks(runs: list[list[int]]) -> list[list[int]]:
+def merge_marks(runs: list[list[int]], counts: np.ndarray | None = None) -> list[list[int]]:
     """A run < 35% of the tallest, or < 50% within a quarter of the tallest's height of a
     neighbour, is a detached Khmer mark: merge it into the nearer neighbour.
-    ponytail: fixed cutoffs (same as mac); tune if headings next to small body text merge."""
+    ponytail: fixed cutoffs (same as mac); tune if headings next to small body text merge.
+
+    With the row ink `counts`, "tallest" counts only a run's inked rows, capped at MERGE_CAP x
+    the tallest run before merging. A toolbar widget merged into the first line across a 40-row
+    gap made an 80-row run, every real line then looked like a mark, and the clip collapsed into
+    one strip (real-015); interleaved columns fill a merged run with real ink (real-008). A Khmer
+    line with its marks is ~1.6x its base glyphs (results/busy_background.md)."""
+    def size(lo: int, hi: int) -> int:
+        return int((counts[lo:hi + 1] > 0).sum()) if counts is not None else hi - lo + 1
+
+    cap = MERGE_CAP * max((hi - lo + 1 for lo, hi in runs), default=0) if counts is not None else math.inf
     while len(runs) > 1:
-        tallest = max(hi - lo + 1 for lo, hi in runs)
+        tallest = min(cap, max(size(lo, hi) for lo, hi in runs))
 
         def gap(k: int) -> float:
             return min(runs[k][0] - runs[k - 1][1] if k > 0 else math.inf,
@@ -369,6 +380,10 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
     the only line or a full-height one."""
     inner = [hi - lo + 1 for k, (lo, hi) in enumerate(runs)
              if not (k == 0 and lo == 0) and not (k == len(runs) - 1 and hi == height - 1)]
+    if not inner and len(runs) > 1:
+        # Every run touches an edge (a sliver merged into the top line, a cut line at the
+        # bottom: noisy-edgecut-029): judge the edge runs against the tallest one.
+        inner = [max(hi - lo + 1 for lo, hi in runs)]
     if not inner:
         return runs
     cut = EDGE_FRAGMENT * float(np.median(inner))
@@ -415,7 +430,7 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
             edges = [lo] + [lo + c for c in cuts] + [hi + 1]
             split += [[edges[k], edges[k + 1] - 1] for k in range(len(edges) - 1)]
         runs = split
-    runs = merge_marks(runs)
+    runs = merge_marks(runs, counts)
     keep = drop_edge_fragments(runs, mask.ink.shape[0], counts)  # lines the selection sliced through
     if len(runs) > 1:
         letters = letter_runs(mask.ink, runs, mask.busy)

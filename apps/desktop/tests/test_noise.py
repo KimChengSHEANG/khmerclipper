@@ -109,7 +109,8 @@ def test_edge_fragments():
     assert P.drop_edge_fragments([[0, 4], [10, 30], [40, 60], [70, 79]], 80) == [[10, 30], [40, 60]]
     assert P.drop_edge_fragments([[0, 22]], 23) == [[0, 22]]
     assert P.drop_edge_fragments([[0, 20], [30, 50]], 51) == [[0, 20], [30, 50]]
-    assert P.drop_edge_fragments([[0, 4], [70, 79]], 80) == [[0, 4], [70, 79]]
+    # Every run on an edge: judged against the tallest (noisy-edgecut-029), the 5-row sliver goes.
+    assert P.drop_edge_fragments([[0, 4], [70, 79]], 80) == [[70, 79]]
 
 
 def test_line_strips_drops_a_cut_line_at_the_top():

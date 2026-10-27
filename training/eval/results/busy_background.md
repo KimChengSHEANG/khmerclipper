@@ -131,3 +131,34 @@ tallest as reference noisy-background-032 lost two real lines). Strip counts: ch
 | - avatar | 246 -> 241 | -2.0% | 2 / 0 |
 | - edgecut, underline | | 0 | 0 / 0 |
 | real 4 | 12 = 12 | 0 | 0 / 0 |
+
+## Mark merging cascade and edge-only clips (2026-10-27)
+
+Found on the user's real captures. real-015 (three English lines with a toolbar widget 40 rows above) came out as one
+strip and read as "the the the" plus Khmer digits: `merge_marks` merged the 10-row widget into the first line as a
+mark, the merged run spanned the 40-row gap, so the "tallest" run grew to 80 rows and every real 29-row line then
+looked like a mark (< 35% of the tallest) until the whole clip was one strip.
+
+- `merge_marks` measures "tallest" in inked rows only (the gap inside a merged run no longer counts), capped at 2x
+  the tallest run before merging. Measuring once before any merge also fixed it (and read the two-column real-008
+  well) but broke two large Khmer lines in a box border, where a line's marks grow it to ~1.6x its base glyphs; caps
+  of 1.0-1.5 broke that test too, so 2.0 it is, and real-008 (columns) stays open.
+- That exposed noisy-edgecut-029: a sliver merged into the top line, a cut line at the bottom, every run on an edge,
+  so `drop_edge_fragments` had no inner run to compare with and dropped nothing. Now edge runs are judged against the
+  tallest run when no run is clear of the edges.
+
+Strip counts: edgecut 39 -> 46 of 50; every other synthetic set unchanged.
+
+| Run | frozen | screen | slices | noisy edgecut | other noisy kinds | real 4 |
+|---|---|---|---|---|---|---|
+| PyTorch pipeline (3090) | 36 = 36 | 716 = 716 | 164 = 164 | 880 -> 501 (-43.1%, 8 / 0) | identical | - |
+| On device (Mac) | 12 = 12 | 734 = 734 | 165 = 165 | 889 -> 510 (-42.6%, 8 / 0) | identical | 12 = 12 |
+| Desktop (ONNX) | 12 = 12 | 726 = 726 | 163 = 163 | 890 -> 511 (-42.6%, 8 / 0) | identical | 12 = 12 |
+
+Unverified real captures, desktop, before -> after (labels not yet checked by the user):
+- real-015: "se can get lost when another is frometizer ... the the the the the ៨០៤៨៨៨៨" -> "ge can get lost when another
+  app is frontmost during a / ving the wrong box size, withng off text. I'll fix the HUD by / the cursor by
+  reapplying it on mouse-down, drag, and app"
+- real-017: "...read r2day-small.comkod–screnshots show the.44" -> "...read. r2drag-small. / The capture worked—screenshots
+  show the 4"
+- real-009: one squashed strip -> its two lines.

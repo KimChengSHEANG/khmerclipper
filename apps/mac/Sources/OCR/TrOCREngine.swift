@@ -636,9 +636,12 @@ enum TrOCREngine {
     /// runs: what is left of a line the selection sliced through. Never drops the
     /// only line or a full-height one. Mirrors pipeline.drop_edge_fragments.
     static func dropEdgeFragments(_ runs: [(lo: Int, hi: Int)], height: Int, profile: [Double]?) -> [(lo: Int, hi: Int)] {
-        let inner = runs.enumerated().filter { k, r in
+        var inner = runs.enumerated().filter { k, r in
             !(k == 0 && r.lo == 0) && !(k == runs.count - 1 && r.hi == height - 1)
         }.map { $0.element.hi - $0.element.lo + 1 }
+        // Every run touches an edge (a sliver merged into the top line, a cut line at the
+        // bottom: noisy-edgecut-029): judge the edge runs against the tallest one.
+        if inner.isEmpty && runs.count > 1 { inner = [runs.map { $0.hi - $0.lo + 1 }.max()!] }
         guard !inner.isEmpty else { return runs }
         let cut = edgeFragment * percentile(inner, 50)
         // A cut line's edge row slices through glyph bodies; a real short line in a tight crop
@@ -702,7 +705,7 @@ enum TrOCREngine {
                 return (0..<(edges.count - 1)).map { (edges[$0], edges[$0 + 1] - 1) }
             }
         }
-        runs = mergeMarks(runs)
+        runs = mergeMarks(runs, counts: counts)
         var keep = dropEdgeFragments(runs, height: mask.height, profile: counts)  // lines the selection sliced through
         if runs.count > 1 {
             let letters = letterRuns(mask.ink, width: mask.width, height: mask.height, runs: runs, busy: mask.busy)
@@ -795,10 +798,22 @@ enum TrOCREngine {
     /// above it (measured: the old 35%-only rule split 17/200 single-line
     /// eval fixtures), while real line gaps are far larger. Tune if
     /// headings next to small body text get merged.
-    static func mergeMarks(_ input: [(lo: Int, hi: Int)]) -> [(lo: Int, hi: Int)] {
+    /// With the row ink `counts`, "tallest" counts only a run's inked rows, capped at
+    /// `mergeCap` x the tallest run before merging. A toolbar widget merged into the first
+    /// line across a 40-row gap made an 80-row run, every real line then looked like a
+    /// mark, and the clip collapsed into one strip (real-015); interleaved columns fill a
+    /// merged run with real ink (real-008). Mirrors pipeline / desktop merge_marks.
+    static let mergeCap = 2.0
+
+    static func mergeMarks(_ input: [(lo: Int, hi: Int)], counts: [Double]? = nil) -> [(lo: Int, hi: Int)] {
         var runs = input
+        func size(_ r: (lo: Int, hi: Int)) -> Int {
+            guard let counts else { return r.hi - r.lo + 1 }
+            return (r.lo...r.hi).reduce(0) { $0 + (counts[$1] > 0 ? 1 : 0) }
+        }
+        let cap = counts == nil ? Int.max : Int(mergeCap * Double(runs.map { $0.hi - $0.lo + 1 }.max() ?? 0))
         while runs.count > 1 {
-            let tallest = runs.map { $0.hi - $0.lo + 1 }.max()!
+            let tallest = min(cap, runs.map(size).max()!)
             func nearestGap(_ k: Int) -> Int {
                 min(k > 0 ? runs[k].lo - runs[k - 1].hi : Int.max,
                     k < runs.count - 1 ? runs[k + 1].lo - runs[k].hi : Int.max)
