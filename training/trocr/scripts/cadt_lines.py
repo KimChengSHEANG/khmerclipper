@@ -84,7 +84,9 @@ def main() -> None:
         lines = [l for l in page_lines(ex["image"].convert("RGB")) if l.width >= 8 and l.height >= 8]
         if not lines:
             continue
-        preds = [t for t, _ in pipeline.decode(lines, Path(a.model), device)]
+        preds = []  # batches of 32: a dense page in one batch ran the GPU out of memory
+        for i in range(0, len(lines), 32):
+            preds += [t for t, _ in pipeline.decode(lines[i:i + 32], Path(a.model), device)]
         for img, pred in zip(lines, preds):
             seen += 1
             if not pred.strip():
