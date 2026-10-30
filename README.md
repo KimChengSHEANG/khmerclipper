@@ -64,7 +64,8 @@ All engines are scored on one frozen set of 200 line images ([`training/eval`](t
 | Tesseract 5 `khm+eng` (stock `tessdata_fast`) | 0.2580 | 0.5370 | 0.0199 | 0.0894 | ~76–108 ms |
 | TrOCR v0, before fine-tuning on new data | 0.0593 | 0.0433 | 0.0662 | 0.0950 | 95 ms |
 | TrOCR v2 + Latin-line fallback | 0.0044 | 0.0055 ¹ | 0.0032 | 0.0046 | 105 ms |
-| **TrOCR v3 + line-split fixes + Latin-line fallback (current)** | **0.0034** | 0.0035 | **0.0030** | **0.0046** | **102 ms** |
+| TrOCR v3 + line-split fixes + Latin-line fallback | 0.0035 | 0.0036 | 0.0030 | 0.0046 | 89 ms |
+| **TrOCR M2 (run v7b) + same pipeline (current)** | **0.0034** | 0.0033 | **0.0030** | **0.0046** | **84 ms** |
 
 ¹ The v2 printed number is the PyTorch reference (Hugging Face, greedy). The other v2 columns are CoreML on the Mac.
 
@@ -114,7 +115,7 @@ Full write-ups: [`finetune_v1.md`](training/eval/results/finetune_v1.md), [`troc
 
 ## How the model is built
 
-- **Weights:** the v3 model, which the shipped v7b was fine-tuned from, is on Hugging Face at [`kcsheang/khmerclipper-trocr-khmer`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer), as PyTorch safetensors you can fine-tune further.
+- **Weights:** the shipped model (M2, from training run v7b) is on Hugging Face at [`kcsheang/khmerclipper-trocr-khmer`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer), as PyTorch safetensors you can fine-tune further.
 - **Base:** [`microsoft/trocr-base-printed`](https://huggingface.co/microsoft/trocr-base-printed), a ViT encoder with a RoBERTa-style decoder.
 - **Tokenizer:** the byte-level BPE tokenizer, plus one added token per Khmer character (U+1780–17FF, U+19E0–19FF and the zero-width separators). Each Khmer character becomes one token instead of three bytes. Labels are capped at 128 tokens.
 - **Training:** HF `Seq2SeqTrainer`, bf16, on a single NVIDIA RTX 3090 (24 GB). Fine-tuning took about a month of GPU time in total. Each fine-tune continues from the last one at a lower learning rate (v1: 2e-5, 3 epochs; v2: 1e-5, 1 epoch), with weighted mixing across sources. Each source gets its own 3% holdout, taken before resampling.
@@ -147,6 +148,7 @@ Which stages used what:
 - **v0** (`checkpoint-3`): SoyVitou, Sokheng, Hanuman, mrrtmob and KiteAether, starting from `microsoft/trocr-base-printed`.
 - **v1:** every row above except `synth_en` (nine sources), starting from v0.
 - **v2:** adds `synth_en`, starting from v1.
+- **M2** (run v7b, final step): adds the Khmer OS font renders and handwriting-font renders over a replay of the v3 mix, starting from v3 ([results](training/eval/results/fonts_cadt_v7.md), [0.4.0 notes](docs/releases/v0.4.0.md)). Models are released as M1 (v3), M2 (v7b).
 - **v3** (`checkpoint-8`, step 16k): adds `synth_screen` and LazyGreed over a replay of the v2 mix, starting from v2 step 10k. A first v3 with less English replay (`synth_en` 40k) lost English UI accuracy and was dropped; 120k fixed it.
 
 The `synth` text comes from the labels of the datasets above. Handwriting's test split is held out for evaluation only.

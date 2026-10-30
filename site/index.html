@@ -142,7 +142,7 @@
         <a class="btn ghost" href="https://github.com/KimChengSHEANG/khmerclipper">View source</a>
         <a class="btn ghost" href="https://huggingface.co/kcsheang/khmerclipper-trocr-khmer">Get the model</a>
       </div>
-      <div class="platforms">Version 0.3.0 · macOS 15+ (Apple Silicon) · Windows · Linux · Free and open source</div>
+      <div class="platforms">Version 0.4.0 · macOS 15+ (Apple Silicon) · Windows · Linux · Free and open source</div>
     </div>
     <div class="demo" aria-hidden="true">
       <div class="bar"><i></i><i></i><i></i></div>
@@ -158,15 +158,15 @@
 
 <section id="new">
   <div class="wrap">
-    <h2>What's new in 0.3.0</h2>
-    <p class="sub">Released 24 October 2026. Measured on the same test images before and after; clean text reads exactly as it did in 0.2.1.</p>
+    <h2>What's new in 0.4.0</h2>
+    <p class="sub">Released 30 October 2026. Measured on the same test images before and after.</p>
     <div class="news">
-      <div class="card"><h3>Faster <span>up to 4×</span></h3><p>Multi-line captures are read up to twice as fast on Mac, and about four times as fast on Windows and Linux.</p></div>
-      <div class="card"><h3>Cluttered captures <span>−26% errors</span></h3><p>Text beside profile pictures, inside buttons and boxes, in tables or underlined links, or cut off by your selection now comes out with about a quarter fewer mistakes.</p></div>
-      <div class="card"><h3>Retina captures <span>full resolution</span></h3><p>The Mac app captures at your screen's full pixel density, so small text is read more accurately.</p></div>
-      <div class="card"><h3>Two-line captures <span>fixed</span></h3><p>Some captures of exactly two lines were read as one jumbled line. They're now split correctly.</p></div>
+      <div class="card"><h3>Busy backgrounds <span>−26% errors</span></h3><p>Text over photos, gradients and textures is now found line by line, with about a quarter fewer mistakes on our busy test images.</p></div>
+      <div class="card"><h3>New reading model <span>M2</span></h3><p>About 3% fewer mistakes on screen text and about 6% fewer on handwriting. Divider lines and broken characters stay out of your text.</p></div>
+      <div class="card"><h3>Menus and columns <span>fixed</span></h3><p>Rows with gaps keep all their items, side-by-side columns are read separately, and photos of paper are split into lines.</p></div>
+      <div class="card"><h3>Windows and Linux <span>smaller, faster</span></h3><p>Screen captures are read about a quarter faster, and the model download is less than half the size.</p></div>
     </div>
-    <p class="note">Windows and Linux download the updated model (about 1.5 GB) once after upgrading. <a href="https://github.com/KimChengSHEANG/khmerclipper/releases/tag/v0.3.0">Release notes</a></p>
+    <p class="note">Windows and Linux download the updated model (about 700 MB) once after upgrading. <a href="https://github.com/KimChengSHEANG/khmerclipper/releases/tag/v0.4.0">Release notes</a></p>
   </div>
 </section>
 
@@ -191,13 +191,13 @@
     <p class="sub">Every engine is scored on the same frozen set of 200 line images. The metric is character error rate (CER), where lower is better.</p>
     <div class="stats" style="margin-bottom:36px">
       <div class="stat"><div class="n">0.34%</div><div class="l">CER of the current TrOCR model on the 200-line benchmark</div></div>
-      <div class="stat"><div class="n">1.8%</div><div class="l">CER on screen captures of 1–5 lines, on-device, in fonts never seen in training</div></div>
+      <div class="stat"><div class="n">1.6%</div><div class="l">CER on screen captures of 1–5 lines, on-device</div></div>
       <div class="stat"><div class="n">~100 ms</div><div class="l">Median time per line on Apple Silicon, about as fast as Tesseract</div></div>
     </div>
     <div class="bars">
       <div class="bar-row"><span>Tesseract 5 (stock)</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">25.8%</span></div>
       <div class="bar-row"><span>TrOCR v0 (before fine-tuning)</span><div class="track"><div class="fill" style="width:23%"></div></div><span class="v">5.93%</span></div>
-      <div class="bar-row"><span><b>KhmerClipper TrOCR v3</b></span><div class="track"><div class="fill good" style="width:1.4%;min-width:6px"></div></div><span class="v">0.34%</span></div>
+      <div class="bar-row"><span><b>KhmerClipper TrOCR M2</b></span><div class="track"><div class="fill good" style="width:1.4%;min-width:6px"></div></div><span class="v">0.34%</span></div>
     </div>
     <p class="note">CER on all 200 images, on-device on Apple Silicon. The printed subset comes from a dataset that earlier checkpoints saw during training, so its number is optimistic; the UI subset (0.30%) and mixed subset (0.46%) were never in training data. <a href="https://github.com/KimChengSHEANG/khmerclipper#results">Full results</a></p>
 

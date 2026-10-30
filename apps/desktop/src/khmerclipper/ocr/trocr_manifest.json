@@ -1,5 +1,5 @@
 {
-  "version": "khmer-v7b-kvb-int8",
+  "version": "khmer-m2",
   "files": [
     {
       "name": "encoder.onnx",

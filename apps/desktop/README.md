@@ -36,7 +36,7 @@ You need a `tesseract` 5.x on `PATH`, or `KHMERCLIPPER_TESSERACT=/path/to/tesser
 ## TrOCR models
 
 1. Export: `.venv/bin/pip install -e '.[tools]'`, then `.venv/bin/python tools/export_onnx.py <checkpoint> exported/khmer`. This checks ONNX against torch.
-2. Publish (needs `huggingface-cli login`): `.venv/bin/python tools/publish_models.py exported/khmer --version khmer-v2`. This pins the HF commit and the SHA-256 values in `src/khmerclipper/ocr/trocr_manifest.json`. Commit that file.
+2. Publish (needs `huggingface-cli login`): `.venv/bin/python tools/publish_models.py exported/khmer --version khmer-m2`. This pins the HF commit and the SHA-256 values in `src/khmerclipper/ocr/trocr_manifest.json`. Commit that file.
 3. To test a local export without publishing, set `KHMERCLIPPER_TROCR_DIR=exported/khmer`.
 
 ## Release
