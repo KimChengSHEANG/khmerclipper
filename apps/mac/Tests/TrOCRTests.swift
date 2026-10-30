@@ -224,6 +224,9 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(TrOCREngine.dropStraySymbols("ក = ខ"), "ក = ខ")
         XCTAssertEqual(TrOCREngine.dropStraySymbols("ខ្មែរ។ (១)"), "ខ្មែរ។ (១)")
         XCTAssertEqual(TrOCREngine.dropStraySymbols(">"), ">")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("──── ស្ដេច ──── រាជរថ"), "ស្ដេច  រាជរថ")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("ស្ដេច ── រាជរថ"), "ស្ដេច ── រាជរថ")
+        XCTAssertEqual(TrOCREngine.dropStraySymbols("ស្ដេច\u{FFFD}\u{FFFD} រាជរថ"), "ស្ដេច រាជរថ")
     }
 
     /// Mirrors apps/desktop test_line_strips_drops_a_border_only_run_on_a_clean_clip.

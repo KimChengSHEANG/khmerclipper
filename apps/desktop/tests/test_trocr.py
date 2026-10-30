@@ -160,3 +160,6 @@ def test_drop_stray_symbols_trims_icon_noise_at_line_ends():
     assert trocr.drop_stray_symbols("ក = ខ") == "ក = ខ"  # inner symbols stay
     assert trocr.drop_stray_symbols("ខ្មែរ។ (១)") == "ខ្មែរ។ (១)"  # brackets and punctuation are text
     assert trocr.drop_stray_symbols(">") == ">"  # never empties a line
+    assert trocr.drop_stray_symbols("──── ស្ដេច ──── រាជរថ") == "ស្ដេច  រាជរថ"  # divider rules
+    assert trocr.drop_stray_symbols("ស្ដេច ── រាជរថ") == "ស្ដេច ── រាជរថ"  # a dash pair is text
+    assert trocr.drop_stray_symbols("ស្ដេច\ufffd\ufffd រាជរថ") == "ស្ដេច រាជរថ"  # broken bytes

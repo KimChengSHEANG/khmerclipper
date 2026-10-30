@@ -114,7 +114,7 @@ Full write-ups: [`finetune_v1.md`](training/eval/results/finetune_v1.md), [`troc
 
 ## How the model is built
 
-- **Weights:** the shipped v3 model is on Hugging Face at [`kcsheang/khmerclipper-trocr-khmer`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer), as PyTorch safetensors you can fine-tune further.
+- **Weights:** the v3 model, which the shipped v7b was fine-tuned from, is on Hugging Face at [`kcsheang/khmerclipper-trocr-khmer`](https://huggingface.co/kcsheang/khmerclipper-trocr-khmer), as PyTorch safetensors you can fine-tune further.
 - **Base:** [`microsoft/trocr-base-printed`](https://huggingface.co/microsoft/trocr-base-printed), a ViT encoder with a RoBERTa-style decoder.
 - **Tokenizer:** the byte-level BPE tokenizer, plus one added token per Khmer character (U+1780–17FF, U+19E0–19FF and the zero-width separators). Each Khmer character becomes one token instead of three bytes. Labels are capped at 128 tokens.
 - **Training:** HF `Seq2SeqTrainer`, bf16, on a single NVIDIA RTX 3090 (24 GB). Fine-tuning took about a month of GPU time in total. Each fine-tune continues from the last one at a lower learning rate (v1: 2e-5, 3 epochs; v2: 1e-5, 1 epoch), with weighted mixing across sources. Each source gets its own 3% holdout, taken before resampling.

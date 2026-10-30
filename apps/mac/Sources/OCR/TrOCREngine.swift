@@ -250,10 +250,15 @@ enum TrOCREngine {
     /// Icons and emoji at a line's ends come out as stray symbols ("... ។ > v", "* text &").
     /// Drops leading / trailing words made only of symbols that rarely end real text;
     /// applied to lines with Khmer (training/eval/results/busy_background.md: noisy_icons
-    /// -17%, no clip worse on any eval set). Mirrors desktop trocr.drop_stray_symbols.
+    /// -17%, no clip worse on any eval set). Divider rules read as "────" and broken bytes
+    /// (U+FFFD, a run-on after rare Latin diacritics) go wherever they are
+    /// (results/fonts_cadt_v7.md). Mirrors desktop trocr.drop_stray_symbols.
     static let straySymbols = Set("<>*&@^~|#`+=")
     static func dropStraySymbols(_ line: String) -> String {
-        var words = line.split(separator: " ", omittingEmptySubsequences: false)
+        let clean = line.replacingOccurrences(of: "\u{FFFD}", with: "")
+            .replacingOccurrences(of: "─{3,}", with: "", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " "))
+        var words = clean.split(separator: " ", omittingEmptySubsequences: false)
         func stray(_ w: Substring) -> Bool { !w.isEmpty && w.allSatisfy { straySymbols.contains($0) } }
         func nonEmpty() -> Int { words.filter { !$0.isEmpty }.count }
         while nonEmpty() > 1, let i = words.firstIndex(where: { !$0.isEmpty }), stray(words[i]) {

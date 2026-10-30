@@ -2,6 +2,7 @@
 caps and Latin-line Tesseract fallback as apps/mac/Sources/OCR/TrOCREngine.swift)."""
 
 import os
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -42,13 +43,18 @@ def contains_khmer(text: str) -> bool:
 
 
 STRAY_SYMBOLS = set("<>*&@^~|#`+=")
+RULE_LINE = re.compile("─{3,}")
 
 
 def drop_stray_symbols(line: str) -> str:
     """Icons and emoji at a line's ends come out as stray symbols ("... ។ > v", "* text &"):
     drop leading / trailing words made only of symbols that rarely end real text. For lines
     with Khmer (training/eval/results/busy_background.md: noisy_icons -17%, no clip worse on
-    any eval set). Inner spacing is kept. Mirrors mac TrOCREngine.dropStraySymbols."""
+    any eval set). Inner spacing is kept. Divider rules read as "────" and broken bytes (U+FFFD,
+    a run-on after rare Latin diacritics) go wherever they are (results/fonts_cadt_v7.md).
+    Mirrors mac TrOCREngine.dropStraySymbols."""
+    line = RULE_LINE.sub("", line.replace("\ufffd", "")).strip(" ")
+
     def stray(word: str) -> bool:
         return bool(word) and all(c in STRAY_SYMBOLS for c in word)
 
