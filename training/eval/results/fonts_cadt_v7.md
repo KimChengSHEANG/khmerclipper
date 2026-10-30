@@ -68,6 +68,10 @@ re-measured with that code, cache cleared before each model, paired character er
 | real 4 | 12 -> 12 | 12 -> 12 |
 
 The cleanup alone took v3's noisy errors from 1792 to 1727 on Mac and 1777 to 1705 on desktop. noisy_avatar is back
-within noise (181 -> 182, 172 -> 180). Median ms is unchanged. Handwriting (-24%) is from the PyTorch gate above and has
-no on-device set. Desktop: `khmer-v7b-kvb-int8`, HF commit 27bb4e7. The Mac model is built locally into the git-ignored
+within noise (181 -> 182, 172 -> 180). Median ms is unchanged. Handwriting: the -24% is the model alone on clean crops (PyTorch gate above). Desktop: `khmer-v7b-kvb-int8`, HF commit 27bb4e7. The Mac model is built locally into the git-ignored
 `Vendor/`, so it reaches users with the next DMG. The v7b PyTorch weights are not published.
+
+Handwriting through the apps (`handwriting_test`, 307 lines, the app's full pipeline, paired character errors v3 -> v7b):
+Mac 182 -> 171 (-6.0%, 4.47% -> 4.20%), desktop 180 -> 170 (-5.6%). The app path has six times the error of the model
+alone, and the -24% does not carry over: 45 of 307 lines have any error. Per-clip mean CER (0.27) is not usable on this
+set: a few lines labelled only "=" come back as whole lines.
