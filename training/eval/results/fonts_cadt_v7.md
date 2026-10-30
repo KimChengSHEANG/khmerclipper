@@ -45,8 +45,8 @@ On device (`trocr-coreml`, Mac, paired character errors, v3 -> v7b last): frozen
 Per font on screen: Khmer OS 345 -> 338, held-out Apple 389 -> 372. One subset moved against it: noisy_avatar
 235 -> 283 (+20%, 8 better / 17 worse); the other noisy subsets net slightly better.
 
-The compiled-model cache (`TrOCRCompiled/khmer-xkv-*`) is keyed by size only, and a package newer than the cache
-replaces it, so benching two models in turn silently reuses the newer one. Clear it before each model.
+The compiled-model cache was keyed by size and modification date, so benching two models in turn silently reused the
+newer one. Fixed after shipping: `TrOCREngine` now stamps each compiled model with its package's Manifest.json.
 
 Desktop (`trocr-desktop`, int8 decoder, `khmer-v3-kvb-int8` -> v7b last built the same way, 670 MB class): frozen 200
 11 -> 11, screen 450 729 -> 711 (-2.5%), slices 320 162 -> 163, noisy 300 1777 -> 1890 (+6.4%), real 4 12 -> 12. Median

@@ -1108,6 +1108,11 @@ enum TrOCREngine {
     /// is bundled raw (a plain resource copy, not Xcode-compiled) so it's
     /// compiled to `.mlmodelc` on first use and the result persisted under
     /// Application Support to avoid recompiling on every launch.
+    /// A compiled model is reusable only if it came from this exact package.
+    static func cacheIsCurrent(compiledExists: Bool, stamp: Data?, manifest: Data) -> Bool {
+        compiledExists && stamp == manifest
+    }
+
     private actor ModelCache {
         static let shared = ModelCache()
 
@@ -1148,31 +1153,28 @@ enum TrOCREngine {
             try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
             let compiledURL = cacheDir.appendingPathComponent("\(name).mlmodelc")
-            // Recompile when the cache is missing OR older than the source
-            // package: an app update (or a re-run of convert.py) that swaps in a
-            // new .mlpackage for the same size must not keep serving the stale
-            // compiled model -- that silently produced wrong output when the
-            // khmer checkpoint changed.
+            // Recompile unless the cache was built from this exact package: an app
+            // update (or a re-run of convert.py) that swaps in a new .mlpackage must
+            // not keep serving the stale compiled model. Modification dates can't
+            // tell: DMG copies keep them, so a new package can look older than the
+            // cache. Every conversion writes a Manifest.json with fresh UUIDs.
             let fm = FileManager.default
-            if !fm.fileExists(atPath: compiledURL.path) || Self.isOlder(compiledURL, than: packageURL) {
+            let stampURL = cacheDir.appendingPathComponent("\(name).source")
+            let manifest = try Data(contentsOf: packageURL.appendingPathComponent("Manifest.json"))
+            if !TrOCREngine.cacheIsCurrent(
+                compiledExists: fm.fileExists(atPath: compiledURL.path),
+                stamp: try? Data(contentsOf: stampURL), manifest: manifest
+            ) {
                 let freshlyCompiled = try MLModel.compileModel(at: packageURL)
                 if fm.fileExists(atPath: compiledURL.path) {
                     try fm.removeItem(at: compiledURL)
                 }
                 try fm.moveItem(at: freshlyCompiled, to: compiledURL)
+                try manifest.write(to: stampURL)
             }
             let config = MLModelConfiguration()
             config.computeUnits = Self.computeUnits
             return try MLModel(contentsOf: compiledURL, configuration: config)
-        }
-
-        private static func isOlder(_ url: URL, than other: URL) -> Bool {
-            let fm = FileManager.default
-            guard let a = try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date,
-                  let b = try? fm.attributesOfItem(atPath: other.path)[.modificationDate] as? Date else {
-                return true   // can't tell -> recompile, the safe choice
-            }
-            return a < b
         }
     }
 }

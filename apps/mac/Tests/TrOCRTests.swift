@@ -218,6 +218,14 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertTrue(TrOCREngine.bandVaries(grad, width: w, height: h))
     }
 
+    func testCompiledModelCacheFollowsThePackageNotItsDate() {
+        let a = Data("package a".utf8), b = Data("package b".utf8)
+        XCTAssertTrue(TrOCREngine.cacheIsCurrent(compiledExists: true, stamp: a, manifest: a))
+        XCTAssertFalse(TrOCREngine.cacheIsCurrent(compiledExists: true, stamp: a, manifest: b))
+        XCTAssertFalse(TrOCREngine.cacheIsCurrent(compiledExists: true, stamp: nil, manifest: a))
+        XCTAssertFalse(TrOCREngine.cacheIsCurrent(compiledExists: false, stamp: a, manifest: a))
+    }
+
     /// Mirrors apps/desktop test_drop_stray_symbols_trims_icon_noise_at_line_ends.
     func testDropStraySymbolsTrimsIconNoiseAtLineEnds() {
         XCTAssertEqual(TrOCREngine.dropStraySymbols("* ស្ដេច រាជរថ & >"), "ស្ដេច រាជរថ")
