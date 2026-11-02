@@ -67,12 +67,34 @@ def drop_stray_symbols(line: str) -> str:
     return line
 
 
+def same_shape(model: str, word: str) -> bool:
+    """Words that differ only where the model is the better reader: capitals, or a lone 1 for i."""
+    return model != word and (model.lower() == word.lower() or (word == "1" and model in ("i", "I", "l")))
+
+
+def model_shapes(line: str, words: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """Tesseract's words with the model's form where same_shape ("1" -> "i", "Change" -> "change").
+    The model may split the line differently, so each word is compared counting from both ends.
+    Mirrors TrOCREngine.modelShapes."""
+    own = line.split()
+    shift = len(own) - len(words)
+    kept = []
+    for i, (word, confidence) in enumerate(words):
+        for j in (i, i + shift):
+            if 0 <= j < len(own) and same_shape(own[j], word):
+                word = own[j]
+                break
+        kept.append((word, confidence))
+    return kept
+
+
 def latin_line(line: str, words: list[tuple[str, float]]) -> str:
     """Tesseract's reading of a Latin-only line: all of it when every word is confident, else word
     by word when both engines split the line the same way ("forr" -> "for"), keeping the model's
     word wherever Tesseract is unsure. Mirrors TrOCREngine.latinLine."""
     if not words:
         return line
+    words = model_shapes(line, words)
     if all(c >= TESSERACT_MIN_CONFIDENCE for _, c in words):
         return " ".join(w for w, _ in words)
     own = line.split()

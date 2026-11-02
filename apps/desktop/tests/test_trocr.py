@@ -165,3 +165,10 @@ def test_drop_stray_symbols_trims_icon_noise_at_line_ends():
     assert trocr.drop_stray_symbols("──── ស្ដេច ──── រាជរថ") == "ស្ដេច  រាជរថ"  # divider rules
     assert trocr.drop_stray_symbols("ស្ដេច ── រាជរថ") == "ស្ដេច ── រាជរថ"  # a dash pair is text
     assert trocr.drop_stray_symbols("ស្ដេច\ufffd\ufffd រាជរថ") == "ស្ដេច រាជរថ"  # broken bytes
+
+
+def test_latin_line_keeps_the_models_capitals_and_lone_i():
+    words = [("1", 93.0), ("want", 95.0), ("Change", 79.0), ("it", 96.0), ("solely", 96.0), ("too", 96.0)]
+    assert trocr.latin_line("i want change it itbrly too", words) == "i want change it solely too"
+    assert trocr.latin_line("1 file", [("1", 93.0), ("file", 95.0)]) == "1 file"
+    assert trocr.latin_line("flle", [("file", 95.0)]) == "file"

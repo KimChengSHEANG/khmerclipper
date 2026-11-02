@@ -523,6 +523,13 @@ final class TrOCRDecodeGuardTests: XCTestCase {
         XCTAssertEqual(TrOCREngine.latinLine(own, words: []), own)
     }
 
+    func testLatinLineKeepsTheModelsCapitalsAndLoneI() {
+        let words: [(text: String, confidence: Double)] = [("1", 93), ("want", 95), ("Change", 79), ("it", 96), ("solely", 96), ("too", 96)]
+        XCTAssertEqual(TrOCREngine.latinLine("i want change it itbrly too", words: words), "i want change it solely too")
+        XCTAssertEqual(TrOCREngine.latinLine("1 file", words: [("1", 93), ("file", 95)]), "1 file")
+        XCTAssertEqual(TrOCREngine.latinLine("flle", words: [("file", 95)]), "file")
+    }
+
     func testSplitBridgedCutsTwoLinesJoinedByATallThing() {
         var profile = [Double](repeating: 0, count: 62)
         for range in [0..<10, 20..<30, 40..<50, 52..<62] { for y in range { profile[y] = 100 } }

@@ -170,11 +170,31 @@ enum TrOCREngine {
         return lines.joined(separator: "\n")
     }
 
+    /// Words that differ only where the model is the better reader: capitals, or a lone 1 for i.
+    static func sameShape(_ model: String, _ word: String) -> Bool {
+        model != word && (model.lowercased() == word.lowercased() || (word == "1" && ["i", "I", "l"].contains(model)))
+    }
+
+    /// Tesseract's words with the model's form where sameShape ("1" -> "i", "Change" -> "change").
+    /// The model may split the line differently, so each word is compared counting from both
+    /// ends. Mirrors trocr.model_shapes.
+    static func modelShapes(_ line: String, words: [(text: String, confidence: Double)]) -> [(text: String, confidence: Double)] {
+        let own = line.split(separator: " ").map(String.init)
+        let shift = own.count - words.count
+        return words.enumerated().map { i, word in
+            for j in [i, i + shift] where own.indices.contains(j) && sameShape(own[j], word.text) {
+                return (own[j], word.confidence)
+            }
+            return word
+        }
+    }
+
     /// Tesseract's reading of a Latin-only line: all of it when every word is confident, else
     /// word by word when both engines split the line the same way ("forr" -> "for"), keeping
     /// the model's word wherever Tesseract is unsure. Mirrors trocr.latin_line.
     static func latinLine(_ line: String, words: [(text: String, confidence: Double)]) -> String {
         guard !words.isEmpty else { return line }
+        let words = modelShapes(line, words: words)
         if words.allSatisfy({ $0.confidence >= tesseractMinConfidence }) {
             return words.map(\.text).joined(separator: " ")
         }

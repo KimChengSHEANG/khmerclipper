@@ -30,3 +30,12 @@ changes 2 of 300 noisy clips and none in frozen, screen or slices, but 9 of 30 r
 labelled, so its real-world effect is not measured here.
 
 The reported clip now reads as English on Mac with one slip, "1 want" for "i want" on a highlighted line.
+
+## Capitals and a lone "1" (2026-11-02, after 0.4.1)
+
+The clip's last slips came from Tesseract, not the model: "1" for "i" at 93 and "Change" for "change" at 79, both over the
+line bar, so they replaced the model's correct words. Tesseract's word now gives way when it differs from the model's only
+in capitals, or is a lone "1" where the model has i, I or l. Each word is compared counting from both ends of the line, since
+the model often merges two words. Replaying the 108 logged Latin lines through the desktop rule changed one: the clip's. That
+replay used the desktop model's lines on the frozen, screen, noisy, slices and real sets, not handwriting, and the Mac has
+only its own tests and the clip behind it.
