@@ -142,7 +142,7 @@
         <a class="btn ghost" href="https://github.com/KimChengSHEANG/khmerclipper">View source</a>
         <a class="btn ghost" href="https://huggingface.co/kcsheang/khmerclipper-trocr-khmer">Get the model</a>
       </div>
-      <div class="platforms">Version 0.4.0 · macOS 15+ (Apple Silicon) · Windows · Linux · Free and open source</div>
+      <div class="platforms">Version 0.4.1 · macOS 15+ (Apple Silicon) · Windows · Linux · Free and open source</div>
     </div>
     <div class="demo" aria-hidden="true">
       <div class="bar"><i></i><i></i><i></i></div>
@@ -158,15 +158,13 @@
 
 <section id="new">
   <div class="wrap">
-    <h2>What's new in 0.4.0</h2>
-    <p class="sub">Released 30 October 2026. Measured on the same test images before and after.</p>
+    <h2>What's new in 0.4.1</h2>
+    <p class="sub">Released 2 November 2026. A small update that fixes how English clips are read.</p>
     <div class="news">
-      <div class="card"><h3>Busy backgrounds <span>−26% errors</span></h3><p>Text over photos, gradients and textures is now found line by line, with about a quarter fewer mistakes on our busy test images.</p></div>
-      <div class="card"><h3>New reading model <span>M2</span></h3><p>About 3% fewer mistakes on screen text and about 6% fewer on handwriting. Divider lines and broken characters stay out of your text.</p></div>
-      <div class="card"><h3>Menus and columns <span>fixed</span></h3><p>Rows with gaps keep all their items, side-by-side columns are read separately, and photos of paper are split into lines.</p></div>
-      <div class="card"><h3>Windows and Linux <span>smaller, faster</span></h3><p>Screen captures are read about a quarter faster, and the model download is less than half the size.</p></div>
+      <div class="card"><h3>English stays English <span>fixed</span></h3><p>A dark band at the edge of a clip, or a tall cursor touching two lines, could turn lines of English into Khmer. Both are now handled.</p></div>
+      <div class="card"><h3>English spelling <span>fewer slips</span></h3><p>When the app is sure of most words on an English line, it keeps them, so slips like "forr" for "for" happen less often.</p></div>
     </div>
-    <p class="note">Windows and Linux download the updated model (about 700 MB) once after upgrading. <a href="https://github.com/KimChengSHEANG/khmerclipper/releases/tag/v0.4.0">Release notes</a></p>
+    <p class="note">Khmer accuracy on our other test images is unchanged. Same reading model, so there is nothing new to download. <a href="https://github.com/KimChengSHEANG/khmerclipper/releases/tag/v0.4.1">Release notes</a></p>
   </div>
 </section>
 
