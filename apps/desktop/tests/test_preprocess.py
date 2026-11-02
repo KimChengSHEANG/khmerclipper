@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from khmerclipper.ocr.preprocess import content_crop, ink_mask, line_strips, pixel_values, two_line_cut
+from khmerclipper.ocr.preprocess import content_crop, ink_mask, line_strips, pixel_values, split_bridged, trim_frame, two_line_cut
 from khmerclipper.paths import resource_dir
 
 
@@ -255,3 +255,37 @@ def test_photo_rows_leaves_clean_and_single_line_clips_alone():
             draw.rectangle((x, top, x + 8, top + 20), fill="black")
     assert photo_rows(clean) is None
     assert photo_rows(clean.crop((0, 8, 660, 36))) is None
+
+
+def framed_panel():
+    img = bars((400, 180), [(30, 50), (75, 95), (120, 140)], bg=(55, 55, 55), fg=(220, 220, 220))
+    draw = ImageDraw.Draw(img)
+    for box in [(0, 0, 399, 9), (0, 170, 399, 179), (390, 0, 399, 179)]:
+        draw.rectangle(box, fill=(3, 3, 3))
+    return img
+
+
+def test_trim_frame_removes_a_band_unlike_the_background():
+    assert trim_frame(framed_panel()).size == (390, 160)
+
+
+def test_trim_frame_keeps_a_clip_with_plain_margins():
+    img = bars((400, 200), [(30, 60), (120, 150)])
+    assert trim_frame(img).size == img.size
+
+
+def test_line_strips_reads_lines_inside_a_dark_frame():
+    assert len(line_strips(framed_panel())) == 3
+
+
+def test_split_bridged_cuts_two_lines_joined_by_a_tall_thing():
+    # Lines at 0-9, 20-29, then 40-49 and 52-61 joined by 2 rows of a pointer.
+    profile = np.zeros(62)
+    for lo, hi in [(0, 10), (20, 30), (40, 50), (52, 62)]:
+        profile[lo:hi] = 100
+    profile[50:52] = 3
+    assert split_bridged([[0, 9], [20, 29], [40, 61]], profile) == [[0, 9], [20, 29], [40, 49], [50, 61]]
+
+
+def test_split_bridged_leaves_lines_of_a_normal_height():
+    assert split_bridged([[0, 9], [20, 29], [40, 49]], np.full(50, 100.0)) == [[0, 9], [20, 29], [40, 49]]

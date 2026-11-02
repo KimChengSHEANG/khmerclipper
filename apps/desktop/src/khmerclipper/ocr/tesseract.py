@@ -62,19 +62,19 @@ def recognize(image: Image.Image) -> str:
     return _run(image)
 
 
-def recognize_line(image: Image.Image) -> tuple[str, float]:
-    """One text line plus Tesseract's lowest word confidence (0-100), from its TSV output."""
+def recognize_words(image: Image.Image) -> list[tuple[str, float]]:
+    """A line's words, each with Tesseract's confidence (0-100), from its TSV output."""
     return parse_tsv(_run(image, ["-c", "tessedit_create_tsv=1"]))
 
 
-def parse_tsv(tsv: str) -> tuple[str, float]:
+def parse_tsv(tsv: str) -> list[tuple[str, float]]:
     """TSV columns: level page_num block_num par_num line_num word_num left top width height conf text."""
     words = []
     for row in tsv.splitlines()[1:]:
         f = row.split("\t")
         if len(f) > 11 and (word := "\t".join(f[11:]).strip()):
             words.append((word, float(f[10])))
-    return " ".join(w for w, _ in words), min((c for _, c in words), default=0.0)
+    return words
 
 
 def _run(image: Image.Image, extra_args: list[str] | None = None) -> str:

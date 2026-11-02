@@ -24,7 +24,7 @@ class InkMask:
     busy: bool = False  # over BUSY_INK ink: measured locally; letter_runs compares with the tallest run
 
 
-def background_color(px: np.ndarray) -> np.ndarray:
+def background_color(px: np.ndarray, whole: bool = False) -> np.ndarray:
     """Background RGB of a clip: the most common colour (each channel binned to 16 levels,
     averaged within the bin) in the band around its edge, min(h, w) // 8 px deep. Unlike the
     four-corner mean it survives an icon or avatar in a corner, a box border drawn on the edge
@@ -34,10 +34,57 @@ def background_color(px: np.ndarray) -> np.ndarray:
     d = max(1, min(h, w) // 8)
     band = np.concatenate([px[:d].reshape(-1, 3), px[-d:].reshape(-1, 3),
                            px[d:-d, :d].reshape(-1, 3), px[d:-d, -d:].reshape(-1, 3)])
+    if whole:
+        band = px.reshape(-1, 3)
     bins = band // 16
     keys = bins[:, 0] * 256 + bins[:, 1] * 16 + bins[:, 2]
     top = np.bincount(keys).argmax()
     return band[keys == top].mean(axis=0).round().astype(int)
+
+
+FRAME_SHARE = 0.02  # a frame's row or column may differ from its colour in this share of pixels
+FRAME_DEPTH = 4     # a frame covers at most 1 / this of the clip from each side
+FRAME_FLAT = 12     # a frame's pixels stay this close to its colour (a gradient drifts away) ...
+FRAME_STEP = 3      # ... and this many lines past it the clip has jumped to another colour
+
+
+def trim_frame(image: Image.Image) -> Image.Image:
+    """Crop plain bands off the clip's edges when their colour is not the clip's background. A
+    dark band beside a panel is ink on every row, so no row looks blank and all lines merge into
+    one strip, which the Khmer model reads as Khmer whatever the text. Margins in the background
+    colour stay. Mirrors TrOCREngine.trimFrame."""
+    px = np.asarray(image.convert("RGB"), dtype=np.int32)
+    h, w = px.shape[:2]
+
+    def depth(lines: list[np.ndarray]) -> int:
+        colour = np.sort(lines[0], axis=0)[len(lines[0]) // 2]
+        n = 0
+        for line in lines:
+            if (np.abs(line - colour) > FRAME_FLAT).any(axis=1).mean() > FRAME_SHARE:
+                break
+            n += 1
+        if n + FRAME_STEP >= len(lines):
+            return 0
+        past = lines[n + FRAME_STEP]
+        return n if (np.abs(np.sort(past, axis=0)[len(past) // 2] - colour) > THRESHOLD).any() else 0
+
+    top = depth([px[y] for y in range(h // FRAME_DEPTH)]) if h >= FRAME_DEPTH else 0
+    bottom = depth([px[h - 1 - y] for y in range(h // FRAME_DEPTH)]) if h >= FRAME_DEPTH else 0
+    rows = px[top:h - bottom]
+    left = depth([rows[:, x] for x in range(w // FRAME_DEPTH)]) if w >= FRAME_DEPTH else 0
+    right = depth([rows[:, w - 1 - x] for x in range(w // FRAME_DEPTH)]) if w >= FRAME_DEPTH else 0
+    if not top + bottom + left + right:
+        return image
+    bg = background_color(px, whole=True)  # the band can reach the text, so not the edge band's colour
+
+    def framed(edge: np.ndarray) -> bool:
+        return (np.abs(np.sort(edge, axis=0)[len(edge) // 2] - bg) > THRESHOLD).any()
+
+    top = top if top and framed(px[0]) else 0
+    bottom = bottom if bottom and framed(px[-1]) else 0
+    left = left if left and framed(rows[:, 0]) else 0
+    right = right if right and framed(rows[:, -1]) else 0
+    return image.crop((left, top, w - right, h - bottom)) if top + bottom + left + right else image
 
 
 def ink_mask(image: Image.Image, scan_max: int = SCAN_MAX) -> InkMask | None:
@@ -186,6 +233,23 @@ def two_line_cut(profile: np.ndarray) -> int | None:
     if weak < TWO_LINE_BAND * profile.max() or profile[c] > TWO_LINE_VALLEY * weak:
         return None
     return c
+
+
+BRIDGE_TALL = 1.6  # a run this many x the median run may be two lines joined by something tall
+
+
+def split_bridged(runs: list[list[int]], profile: np.ndarray) -> list[list[int]]:
+    """Cut runs where one tall thing (a pointer, an icon) joined two lines. The pitch finds nothing
+    when blank lines make it twice the real one, and a run that tall makes every other line look
+    like a mark, so the whole clip merges into one strip. Needs 3 runs for a median to mean anything."""
+    if len(runs) < 3:
+        return runs
+    med = sorted(hi - lo + 1 for lo, hi in runs)[len(runs) // 2]
+    out = []
+    for lo, hi in runs:
+        cut = two_line_cut(profile[lo:hi + 1]) if hi - lo + 1 >= BRIDGE_TALL * med else None
+        out += [[lo, hi]] if cut is None else [[lo, lo + cut - 1], [lo + cut, hi]]
+    return out
 
 
 def merge_marks(runs: list[list[int]], counts: np.ndarray | None = None) -> list[list[int]]:
@@ -407,6 +471,7 @@ def line_strips(image: Image.Image) -> list[Image.Image]:
     """Text-line strips (row_strips), with multi-column strips split into their columns.
     A single strip is a single line (its word gaps are not a gutter), unless it is a photo of
     several lines (photo_rows)."""
+    image = trim_frame(image)
     strips = row_strips(image)
     if len(strips) > 1:
         return [c for s in strips for c in split_columns(s)]
@@ -534,7 +599,7 @@ def row_strips(image: Image.Image) -> list[Image.Image]:
                 cuts = [c] if (c := two_line_cut(seg)) is not None else []
             edges = [lo] + [lo + c for c in cuts] + [hi + 1]
             split += [[edges[k], edges[k + 1] - 1] for k in range(len(edges) - 1)]
-        runs = split
+        runs = split_bridged(split, profile)
     runs = merge_marks(runs, counts)
     keep = drop_edge_fragments(runs, mask.ink.shape[0], counts)  # lines the selection sliced through
     if len(runs) > 1:

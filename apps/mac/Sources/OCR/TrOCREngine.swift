@@ -47,6 +47,8 @@ enum TrOCREngine {
     /// lines Tesseract gets wrong <= 62.7 (one exception at 76.9, still
     /// lower CER than TrOCR there).
     static let tesseractMinConfidence = 70.0
+    /// A single word swapped into a line needs more: handwriting's wrong words reach 78, clean text's right ones 93.
+    static let tesseractWordConfidence = 90.0
 
     static func blockedToken(_ ids: [Int], maxRun: Int = maxRun) -> Int? {
         guard ids.count >= maxRun, let last = ids.last,
@@ -160,13 +162,25 @@ enum TrOCREngine {
             // ponytail: one tesseract process per Latin-only strip (~90ms each).
             var text = containsKhmer(line) ? dropStraySymbols(line) : line
             if !containsKhmer(line),
-               let tess = try? await TesseractEngine.recognizeLine(in: contentCrop(strip)),
-               !tess.text.isEmpty, tess.minConfidence >= tesseractMinConfidence {
-                text = tess.text
+               let words = try? await TesseractEngine.recognizeWords(in: contentCrop(strip)) {
+                text = latinLine(line, words: words)
             }
             if !text.isEmpty { lines.append(text) }
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Tesseract's reading of a Latin-only line: all of it when every word is confident, else
+    /// word by word when both engines split the line the same way ("forr" -> "for"), keeping
+    /// the model's word wherever Tesseract is unsure. Mirrors trocr.latin_line.
+    static func latinLine(_ line: String, words: [(text: String, confidence: Double)]) -> String {
+        guard !words.isEmpty else { return line }
+        if words.allSatisfy({ $0.confidence >= tesseractMinConfidence }) {
+            return words.map(\.text).joined(separator: " ")
+        }
+        let own = line.split(separator: " ").map(String.init)
+        guard own.count == words.count else { return line }
+        return zip(own, words).map { $1.confidence >= tesseractWordConfidence ? $1.text : $0 }.joined(separator: " ")
     }
 
     private static func recognizeLine(
@@ -444,8 +458,8 @@ enum TrOCREngine {
     /// levels, averaged within the bin) in the band around the edge, min(h, w) / 8
     /// px deep. Survives an icon in a corner, a box border on the edge and glyphs
     /// touching a tight crop. `px` is RGBA. Mirrors pipeline.background_color.
-    static func backgroundColor(_ px: [UInt8], width w: Int, height h: Int) -> (Int, Int, Int) {
-        let d = max(1, min(h, w) / 8)
+    static func backgroundColor(_ px: [UInt8], width w: Int, height h: Int, whole: Bool = false) -> (Int, Int, Int) {
+        let d = whole ? h : max(1, min(h, w) / 8)
         var count = [Int](repeating: 0, count: 4096)
         var sum = [(Int, Int, Int)](repeating: (0, 0, 0), count: 4096)
         func add(_ x: Int, _ y: Int) {
@@ -681,9 +695,71 @@ enum TrOCREngine {
     // as pipeline.py and apps/desktop preprocess.py (training/eval/results/busy_background.md).
     static let columnTall = 5.0, columnGap = 2.0
 
+    // Same values as pipeline.py and apps/desktop preprocess.py.
+    static let frameShare = 0.02  // a frame's row or column may differ from its colour in this share of pixels
+    static let frameDepth = 4     // a frame covers at most 1 / this of the clip from each side
+    static let frameFlat = 12     // a frame's pixels stay this close to its colour (a gradient drifts away) ...
+    static let frameStep = 3      // ... and this many lines past it the clip has jumped to another colour
+
+    /// Crop plain bands off the clip's edges when their colour is not the clip's background. A
+    /// dark band beside a panel is ink on every row, so no row looks blank and all lines merge
+    /// into one strip, which the Khmer model reads as Khmer whatever the text. Margins in the
+    /// background colour stay. Mirrors pipeline.trim_frame.
+    static func trimFrame(_ image: CGImage) -> CGImage {
+        let w = image.width, h = image.height
+        guard w > 1, h > 1, let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return image }
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: colorSpace,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return image }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        func rgb(_ x: Int, _ y: Int) -> (Int, Int, Int) {
+            let p = (y * w + x) * 4
+            return (Int(px[p]), Int(px[p + 1]), Int(px[p + 2]))
+        }
+        func colour(_ line: [(Int, Int, Int)]) -> (Int, Int, Int) {  // per-channel median
+            let m = line.count / 2
+            return (line.map(\.0).sorted()[m], line.map(\.1).sorted()[m], line.map(\.2).sorted()[m])
+        }
+        func differs(_ a: (Int, Int, Int), _ b: (Int, Int, Int)) -> Bool {
+            abs(a.0 - b.0) > inkThreshold || abs(a.1 - b.1) > inkThreshold || abs(a.2 - b.2) > inkThreshold
+        }
+        func depth(_ count: Int, _ line: (Int) -> [(Int, Int, Int)]) -> Int {
+            guard count > 0 else { return 0 }
+            let c = colour(line(0))
+            var n = 0
+            while n < count {
+                let l = line(n)
+                let off = l.filter { abs($0.0 - c.0) > frameFlat || abs($0.1 - c.1) > frameFlat || abs($0.2 - c.2) > frameFlat }.count
+                if Double(off) / Double(l.count) > frameShare { break }
+                n += 1
+            }
+            return n + frameStep < count && differs(colour(line(n + frameStep)), c) ? n : 0
+        }
+        func row(_ y: Int) -> [(Int, Int, Int)] { (0..<w).map { rgb($0, y) } }
+
+        var top = depth(h / frameDepth) { row($0) }
+        var bottom = depth(h / frameDepth) { row(h - 1 - $0) }
+        let y0 = top, y1 = h - bottom
+        func column(_ x: Int) -> [(Int, Int, Int)] { (y0..<y1).map { rgb(x, $0) } }
+        var left = depth(w / frameDepth) { column($0) }
+        var right = depth(w / frameDepth) { column(w - 1 - $0) }
+        guard top + bottom + left + right > 0 else { return image }
+
+        let bg = backgroundColor(px, width: w, height: h, whole: true)  // the band can reach the text
+        if top > 0, !differs(colour(row(0)), bg) { top = 0 }
+        if bottom > 0, !differs(colour(row(h - 1)), bg) { bottom = 0 }
+        if left > 0, !differs(colour(column(0)), bg) { left = 0 }
+        if right > 0, !differs(colour(column(w - 1)), bg) { right = 0 }
+        guard top + bottom + left + right > 0 else { return image }
+        return image.cropping(to: CGRect(x: left, y: top, width: w - left - right, height: h - top - bottom)) ?? image
+    }
+
     /// Text-line strips (rowStrips), with multi-column strips split into their columns. A
     /// single strip is a single line: its word gaps are not a gutter.
-    static func lineStrips(_ image: CGImage) -> [CGImage] {
+    static func lineStrips(_ clip: CGImage) -> [CGImage] {
+        let image = trimFrame(clip)
         let strips = rowStrips(image)
         if strips.count > 1 { return strips.flatMap { splitColumns($0) } }
         return photoRows(image) ?? strips
@@ -798,6 +874,7 @@ enum TrOCREngine {
                 let edges = [run.lo] + cuts.map { run.lo + $0 } + [run.hi + 1]
                 return (0..<(edges.count - 1)).map { (edges[$0], edges[$0 + 1] - 1) }
             }
+            runs = splitBridged(runs, profile: profile)
         }
         runs = mergeMarks(runs, counts: counts)
         var keep = dropEdgeFragments(runs, height: mask.height, profile: counts)  // lines the selection sliced through
@@ -869,6 +946,22 @@ enum TrOCREngine {
     /// the lighter line's densest row this dense vs the run's.
     static let twoLineValley = 0.15
     static let twoLineBand = 0.3
+
+    static let bridgeTall = 1.6  // a run this many x the median run may be two lines joined by something tall
+
+    /// Cut runs where one tall thing (a pointer, an icon) joined two lines. The pitch finds
+    /// nothing when blank lines make it twice the real one, and a run that tall makes every
+    /// other line look like a mark, so the whole clip merges into one strip. Needs 3 runs for
+    /// a median to mean anything. Mirrors pipeline.split_bridged.
+    static func splitBridged(_ runs: [(lo: Int, hi: Int)], profile: [Double]) -> [(lo: Int, hi: Int)] {
+        guard runs.count >= 3 else { return runs }
+        let med = runs.map { $0.hi - $0.lo + 1 }.sorted()[runs.count / 2]
+        return runs.flatMap { run -> [(lo: Int, hi: Int)] in
+            guard Double(run.hi - run.lo + 1) >= bridgeTall * Double(med),
+                  let cut = twoLineCut(Array(profile[run.lo...run.hi])) else { return [run] }
+            return [(run.lo, run.lo + cut - 1), (run.lo + cut, run.hi)]
+        }
+    }
 
     /// Row to cut a run holding two touching lines when linePitch finds no
     /// pitch (two lines, the second often short, are too little repetition

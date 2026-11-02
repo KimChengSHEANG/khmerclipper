@@ -132,6 +132,37 @@ final class TrOCRLineSplitTests: XCTestCase {
         XCTAssertEqual(TrOCREngine.lineStrips(image).count, 3)
     }
 
+    /// A dark panel's three lines with a black band on the clip's top, right and bottom
+    /// edges (mirrors training/eval/tests/test_pipeline.py framed_panel). RGB per pixel.
+    private func framedPanel() throws -> CGImage {
+        let w = 400, h = 180
+        var px = [UInt8](repeating: 255, count: w * h * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let line = (20...330).contains(x) && [30...50, 75...95, 120...140].contains { $0.contains(y) }
+                let frame = y < 10 || y >= 170 || x >= 390
+                let v: UInt8 = frame ? 3 : line ? 220 : 55
+                for c in 0..<3 { px[(y * w + x) * 4 + c] = v }
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(px) as CFData))
+        return try XCTUnwrap(CGImage(
+            width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+    }
+
+    func testTrimFrameRemovesABandUnlikeTheBackground() throws {
+        let trimmed = TrOCREngine.trimFrame(try framedPanel())
+        XCTAssertEqual(trimmed.width, 390)
+        XCTAssertEqual(trimmed.height, 160)
+    }
+
+    func testLineStripsReadsLinesInsideADarkFrame() throws {
+        XCTAssertEqual(TrOCREngine.lineStrips(try framedPanel()).count, 3)
+    }
+
     /// At normal Khmer line heights the subscripts of one line touch the
     /// above-marks of the next, so no blank row separates them. Four such
     /// lines (mirrors training/eval/tests/test_pipeline.py touching_lines)
@@ -478,9 +509,27 @@ final class TrOCRDecodeGuardTests: XCTestCase {
         5\t1\t1\t1\t1\t2\t160\t10\t30\t40\t72.5\t11
         """
         let r = TesseractEngine.parseTSV(tsv)
-        XCTAssertEqual(r.text, "Warranty 11")
-        XCTAssertEqual(r.minConfidence, 72.5)
-        XCTAssertEqual(TesseractEngine.parseTSV("").minConfidence, 0)
+        XCTAssertEqual(r.map(\.text), ["Warranty", "11"])
+        XCTAssertEqual(r.map(\.confidence), [95, 72.5])
+        XCTAssertTrue(TesseractEngine.parseTSV("").isEmpty)
+    }
+
+    func testLatinLineTakesConfidentTesseractWordByWord() {
+        let own = "Warrantly 11 months"
+        XCTAssertEqual(TrOCREngine.latinLine(own, words: [("Warranty", 95), ("11", 90), ("months", 92)]), "Warranty 11 months")
+        XCTAssertEqual(TrOCREngine.latinLine(own, words: [("Warranty", 95), ("11", 90), ("rnonths", 40)]), "Warranty 11 months")
+        XCTAssertEqual(TrOCREngine.latinLine(own, words: [("Warranty", 40), ("11", 40), ("rnonths", 40)]), own)
+        XCTAssertEqual(TrOCREngine.latinLine(own, words: [("Warranty", 95), ("rnonths", 40)]), own)
+        XCTAssertEqual(TrOCREngine.latinLine(own, words: []), own)
+    }
+
+    func testSplitBridgedCutsTwoLinesJoinedByATallThing() {
+        var profile = [Double](repeating: 0, count: 62)
+        for range in [0..<10, 20..<30, 40..<50, 52..<62] { for y in range { profile[y] = 100 } }
+        profile[50] = 3; profile[51] = 3
+        let runs = TrOCREngine.splitBridged([(0, 9), (20, 29), (40, 61)], profile: profile)
+        XCTAssertEqual(runs.map(\.lo), [0, 20, 40, 50])
+        XCTAssertEqual(runs.map(\.hi), [9, 29, 49, 61])
     }
 
     func testDecodeCapMatchesTrainingMaxLabelLength() {

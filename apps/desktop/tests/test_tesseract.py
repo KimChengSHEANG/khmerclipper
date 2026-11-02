@@ -68,19 +68,19 @@ def test_ascii_path_passthrough_for_ascii(tmp_path):
     assert tesseract.ascii_path(tmp_path) == str(tmp_path)
 
 
-def test_parse_tsv_words_and_lowest_confidence():
+def test_parse_tsv_words_and_confidences():
     tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
            "1\t1\t0\t0\t0\t0\t0\t0\t410\t72\t-1\t\n"
            "5\t1\t1\t1\t1\t1\t30\t10\t120\t40\t95.0\tWarranty\n"
            "5\t1\t1\t1\t1\t2\t160\t10\t30\t40\t72.5\t11\n")
-    assert tesseract.parse_tsv(tsv) == ("Warranty 11", 72.5)
-    assert tesseract.parse_tsv("") == ("", 0.0)
+    assert tesseract.parse_tsv(tsv) == [("Warranty", 95.0), ("11", 72.5)]
+    assert tesseract.parse_tsv("") == []
 
 
 @needs_tesseract
-def test_recognize_line_reads_clean_english():
+def test_recognize_words_reads_clean_english():
     from PIL import ImageDraw, ImageFont
     img = Image.new("RGB", (420, 70), "white")
     ImageDraw.Draw(img).text((20, 15), "Battery health 100%", fill="black", font=ImageFont.load_default(36))
-    text, conf = tesseract.recognize_line(img)
-    assert text == "Battery health 100%" and conf > 0
+    words = tesseract.recognize_words(img)
+    assert " ".join(w for w, _ in words) == "Battery health 100%" and min(c for _, c in words) > 0

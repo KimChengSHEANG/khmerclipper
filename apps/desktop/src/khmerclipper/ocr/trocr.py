@@ -35,6 +35,8 @@ def blocked_token(ids: list[int], max_run: int = MAX_RUN) -> int | None:
 # Measured (apps/mac TrOCREngine.tesseractMinConfidence): clean UI strips >= 75.9,
 # all correct; scanned eval lines Tesseract gets wrong <= 62.7.
 TESSERACT_MIN_CONFIDENCE = 70.0
+# A single word swapped into a line needs more: handwriting's wrong words reach 78, clean text's right ones 93.
+TESSERACT_WORD_CONFIDENCE = 90.0
 
 
 def contains_khmer(text: str) -> bool:
@@ -65,10 +67,24 @@ def drop_stray_symbols(line: str) -> str:
     return line
 
 
+def latin_line(line: str, words: list[tuple[str, float]]) -> str:
+    """Tesseract's reading of a Latin-only line: all of it when every word is confident, else word
+    by word when both engines split the line the same way ("forr" -> "for"), keeping the model's
+    word wherever Tesseract is unsure. Mirrors TrOCREngine.latinLine."""
+    if not words:
+        return line
+    if all(c >= TESSERACT_MIN_CONFIDENCE for _, c in words):
+        return " ".join(w for w, _ in words)
+    own = line.split()
+    if len(own) != len(words):
+        return line
+    return " ".join(w if c >= TESSERACT_WORD_CONFIDENCE else o for o, (w, c) in zip(own, words))
+
+
 def latin_fallback(strip: Image.Image, line: str) -> str:
     """The Khmer fine-tune misspells clean English UI text ("Warrantly", "PriceSnbox")
     that Tesseract reads perfectly, but Tesseract is worse on low-res scanned English.
-    So a Latin-only line switches to Tesseract only when every word is confident.
+    So a Latin-only line takes Tesseract's words only where they are confident (latin_line).
     Lines with any Khmer stay with TrOCR. ponytail: one tesseract run per Latin-only line."""
     if contains_khmer(line):
         return line
@@ -76,10 +92,9 @@ def latin_fallback(strip: Image.Image, line: str) -> str:
 
     try:
         # The noise-free crop the model saw (avatars, borders left out); only for Latin lines.
-        text, min_conf = tesseract.recognize_line(content_crop(strip))
+        return latin_line(line, tesseract.recognize_words(content_crop(strip)))
     except KhmerClipperError:
         return line
-    return text if text and min_conf >= TESSERACT_MIN_CONFIDENCE else line
 
 
 @dataclass

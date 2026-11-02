@@ -108,13 +108,15 @@ def test_contains_khmer():
 
 
 @pytest.mark.parametrize("tess, expected", [
-    (("Warranty 11 months", 95.0), "Warranty 11 months"),   # confident: Tesseract wins
-    (("Warranty 11 rnonths", 40.0), "Warrantly 11 months"),  # unsure: keep TrOCR
-    (("", 0.0), "Warrantly 11 months"),
+    ([("Warranty", 95.0), ("11", 90.0), ("months", 92.0)], "Warranty 11 months"),  # confident: Tesseract wins
+    ([("Warranty", 40.0), ("11", 40.0), ("rnonths", 40.0)], "Warrantly 11 months"),  # unsure: keep TrOCR
+    ([("Warranty", 95.0), ("11", 90.0), ("rnonths", 40.0)], "Warranty 11 months"),  # word by word
+    ([("Warranty", 95.0), ("rnonths", 40.0)], "Warrantly 11 months"),  # split differently: keep TrOCR
+    ([], "Warrantly 11 months"),
 ])
 def test_latin_fallback_uses_confident_tesseract(monkeypatch, tess, expected):
     from khmerclipper.ocr import tesseract
-    monkeypatch.setattr(tesseract, "recognize_line", lambda img: tess)
+    monkeypatch.setattr(tesseract, "recognize_words", lambda img: tess)
     assert trocr.latin_fallback(Image.new("RGB", (10, 10)), "Warrantly 11 months") == expected
 
 
@@ -124,7 +126,7 @@ def test_latin_fallback_keeps_khmer_and_survives_missing_tesseract(monkeypatch):
 
     def boom(img):
         raise EngineUnavailable("no tesseract")
-    monkeypatch.setattr(tesseract, "recognize_line", boom)
+    monkeypatch.setattr(tesseract, "recognize_words", boom)
     assert trocr.latin_fallback(Image.new("RGB", (10, 10)), "Price inbox") == "Price inbox"
     assert trocr.latin_fallback(Image.new("RGB", (10, 10)), "កខ") == "កខ"
 
@@ -147,7 +149,7 @@ def test_latin_fallback_gets_the_noise_free_crop(monkeypatch):
     for x in range(120, 380, 14):
         d.rectangle((x, 22, x + 8, 38), fill="black")  # glyphs
     seen = []
-    monkeypatch.setattr(tesseract, "recognize_line", lambda im: seen.append(im.size) or ("Hello", 99.0))
+    monkeypatch.setattr(tesseract, "recognize_words", lambda im: seen.append(im.size) or [("Hello", 99.0)])
     assert trocr.latin_fallback(img, "Hel1o") == "Hello"
     assert seen and seen[0][0] < 330  # cropped to the text, avatar left out
     seen.clear()

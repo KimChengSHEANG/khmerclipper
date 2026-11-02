@@ -1,6 +1,6 @@
 from PIL import Image, ImageDraw
 
-from khmerclipper_eval.pipeline import blocked_token, line_strips, split_wide
+from khmerclipper_eval.pipeline import blocked_token, line_strips, split_wide, trim_frame
 
 
 def blocks(size, boxes, fg="black", bg="white"):
@@ -143,3 +143,26 @@ def test_band_varies_on_a_gradient_not_on_a_flat_clip_with_edge_glyphs():
     assert not band_varies(flat)
     t = np.linspace(0, 1, 100)[None, :, None]
     assert band_varies((np.array([235, 235, 245]) * (1 - t) + np.array([150, 160, 215]) * t).repeat(64, axis=0).astype(int))
+
+
+def framed_panel():
+    # A dark panel's three lines, with a black band on the clip's top, right and bottom edges.
+    img = blocks((400, 180), [(20, 30, 330, 50), (20, 75, 330, 95), (20, 120, 330, 140)], fg=(220, 220, 220), bg=(55, 55, 55))
+    d = ImageDraw.Draw(img)
+    for box in [(0, 0, 399, 9), (0, 170, 399, 179), (390, 0, 399, 179)]:
+        d.rectangle(box, fill=(3, 3, 3))
+    return img
+
+
+def test_trim_frame_removes_a_band_unlike_the_background():
+    assert trim_frame(framed_panel()).size == (390, 160)
+
+
+def test_trim_frame_keeps_a_clip_with_plain_margins():
+    img = blocks((200, 120), [(10, 30, 190, 50), (10, 70, 190, 90)])
+    assert trim_frame(img).size == img.size
+
+
+def test_framed_lines_split_after_trimming():
+    assert len(line_strips(framed_panel())) == 1
+    assert len(line_strips(trim_frame(framed_panel()))) == 3
