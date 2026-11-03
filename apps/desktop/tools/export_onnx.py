@@ -50,6 +50,10 @@ def heads(attn, x):  # [B, T, E] -> [B, H, T, D]
     return x.view(x.shape[0], -1, attn.num_heads, attn.head_dim).transpose(1, 2)
 
 
+def interleave(ks, vs):  # [L, ...] x 2 -> k0, v0, k1, v1, ...
+    return [t for kv in zip(ks, vs) for t in kv]
+
+
 def attend(attn, q, k, v):
     out = (q @ k.transpose(-1, -2)).softmax(dim=-1) @ v
     return out.transpose(1, 2).reshape(out.shape[0], -1, attn.num_heads * attn.head_dim)
@@ -58,7 +62,8 @@ def attend(attn, q, k, v):
 class DecoderStep(torch.nn.Module):
     """One token per line per call, B lines in lockstep: self-attention K/V of the earlier
     tokens come in as past_k/past_v ([L, B, H, t, D], t = 0 on the first step) and go out one
-    longer; `position` is shared. Re-implements
+    longer; `position` is shared. Cross K/V come in per layer (cross_k_0, cross_v_0, ...): a
+    stacked input costs a Gather copy of every layer's K/V on every step. Re-implements
     transformers' TrOCRDecoder layer (post-LN) like the mac app's kv_decoder.py."""
 
     def __init__(self, model):
@@ -71,7 +76,8 @@ class DecoderStep(torch.nn.Module):
         else:
             self.pos_table, self.pos_offset = dec.embed_positions.weights, dec.embed_positions.padding_idx + 1
 
-    def forward(self, input_ids, position, cross_k, cross_v, past_k, past_v):
+    def forward(self, input_ids, position, past_k, past_v, *cross):
+        cross_k, cross_v = cross[0::2], cross[1::2]
         h = self.embed_tokens(input_ids) + self.pos_table.index_select(0, position + self.pos_offset).unsqueeze(0)
         if self.layernorm_embedding is not None:
             h = self.layernorm_embedding(h)
@@ -148,7 +154,9 @@ def main() -> None:
         ref2 = Reference(model)(pixel2[1:], torch.tensor([seq])).numpy()[0]
         cross_k, cross_v = enc(pixel)
         past = torch.zeros(cross_k.shape[0], 1, cross_k.shape[2], 1, cross_k.shape[4])
-        example = (torch.tensor([[100]]), torch.tensor([1]), cross_k, cross_v, past, past)
+        example = (torch.tensor([[100]]), torch.tensor([1]), past, past, *interleave(cross_k, cross_v))
+    layers = range(cross_k.shape[0])
+    cross_names = [f"cross_{kv}_{i}" for i in layers for kv in "kv"]
 
     # Batch axis dynamic on both: the app decodes a capture's lines together (one weight read
     # per step for all of them; batch-1 CPU decode is memory-bound).
@@ -156,9 +164,9 @@ def main() -> None:
                       output_names=["cross_k", "cross_v"], opset_version=17, dynamo=False,
                       dynamic_axes={"pixel_values": {0: "b"}, "cross_k": {1: "b"}, "cross_v": {1: "b"}})
     torch.onnx.export(dec, example, out / "decoder.onnx",
-                      input_names=["input_ids", "position", "cross_k", "cross_v", "past_k", "past_v"],
+                      input_names=["input_ids", "position", "past_k", "past_v", *cross_names],
                       output_names=["logits", "present_k", "present_v"],
-                      dynamic_axes={"input_ids": {0: "b"}, "cross_k": {1: "b"}, "cross_v": {1: "b"},
+                      dynamic_axes={"input_ids": {0: "b"}, **{n: {0: "b"} for n in cross_names},
                                     "past_k": {1: "b", 3: "t"}, "past_v": {1: "b", 3: "t"},
                                     "logits": {0: "b"}, "present_k": {1: "b", 3: "t1"}, "present_v": {1: "b", 3: "t1"}},
                       opset_version=17, dynamo=False)
@@ -171,14 +179,16 @@ def main() -> None:
     diff = 0.0
     for pos, tok in enumerate(seq):
         logits, pk, pv = step.run(None, {"input_ids": np.array([[tok]]), "position": np.array([pos]),
-                                         "cross_k": ck, "cross_v": cv, "past_k": pk, "past_v": pv})
+                                         "past_k": pk, "past_v": pv,
+                                         **dict(zip(cross_names, interleave(ck, cv)))})
         diff = max(diff, float(np.abs(logits[0, 0] - ref[pos]).max()))
     # Batch of two (the first image again plus another): each row must match its own batch-1 run.
     ck, cv = ort.InferenceSession(str(out / "encoder.onnx")).run(None, {"pixel_values": pixel2.numpy()})
     pk = pv = np.zeros((ck.shape[0], 2, ck.shape[2], 0, ck.shape[4]), np.float32)
     for pos, tok in enumerate(seq):
         logits, pk, pv = step.run(None, {"input_ids": np.array([[tok], [tok]]), "position": np.array([pos]),
-                                         "cross_k": ck, "cross_v": cv, "past_k": pk, "past_v": pv})
+                                         "past_k": pk, "past_v": pv,
+                                         **dict(zip(cross_names, interleave(ck, cv)))})
         diff = max(diff, float(np.abs(logits[0, 0] - ref[pos]).max()), float(np.abs(logits[1, 0] - ref2[pos]).max()))
     print(f"parity max abs diff: {diff:.2e}")
     if diff > PARITY_TOLERANCE:

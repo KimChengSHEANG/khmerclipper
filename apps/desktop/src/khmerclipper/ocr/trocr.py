@@ -175,6 +175,10 @@ def recognize(image: Image.Image, progress: Callable[[str], None] | None = None,
     return recognize_with_session(load_session(installed_model_dir()), image, progress, cancel)
 
 
+def cross_layers(session) -> bool:
+    return any(i.name == "cross_k_0" for i in session.decoder.get_inputs())
+
+
 def recognize_with_session(session, image: Image.Image, progress: Callable[[str], None] | None = None,
                            cancel: threading.Event | None = None) -> str:
     tok = session.tokenizer
@@ -192,6 +196,11 @@ def recognize_with_session(session, image: Image.Image, progress: Callable[[str]
         cross_k, cross_v = session.encoder.run(None, {
             "pixel_values": np.concatenate([pixel_values(piece) for _, _, piece in chunk])})
         past_k = past_v = np.zeros((*cross_k.shape[:3], 0, cross_k.shape[4]), np.float32)
+        if cross_layers(session):  # per-layer views, no copy; older exports take the stacked pair
+            cross = {f"cross_{kv}_{i}": a[i] for kv, a in (("k", cross_k), ("v", cross_v))
+                     for i in range(a.shape[0])}
+        else:
+            cross = {"cross_k": cross_k, "cross_v": cross_v}
         ids = [[tok.decoder_start_id] for _ in chunk]
         live = [True] * len(chunk)
         for t in range(MAX_LENGTH - 1):
@@ -202,7 +211,7 @@ def recognize_with_session(session, image: Image.Image, progress: Callable[[str]
             logits, past_k, past_v = session.decoder.run(None, {
                 "input_ids": np.array([[row[-1]] for row in ids], dtype=np.int64),
                 "position": np.array([t], dtype=np.int64),
-                "cross_k": cross_k, "cross_v": cross_v, "past_k": past_k, "past_v": past_v})
+                "past_k": past_k, "past_v": past_v, **cross})
             for j, row in enumerate(ids):
                 if not live[j]:
                     continue  # finished rows ride along; their output is ignored

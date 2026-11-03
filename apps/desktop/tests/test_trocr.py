@@ -27,13 +27,18 @@ class FakeEncoder:
 class ScriptedDecoder:
     """Emits script[position] as every row's next token (last entry repeats), growing the cache by one."""
 
-    def __init__(self, script):
-        self.script, self.calls = script, 0
+    def __init__(self, script, layered=False):
+        self.script, self.calls, self.layered = script, 0, layered
+
+    def get_inputs(self):
+        cross = [f"cross_{kv}_{i}" for i in range(2) for kv in "kv"] if self.layered else ["cross_k", "cross_v"]
+        return [SimpleNamespace(name=n) for n in ["input_ids", "position", "past_k", "past_v", *cross]]
 
     def run(self, names, feeds):
         self.calls += 1
         ids, pos, past = feeds["input_ids"], int(feeds["position"][0]), feeds["past_k"]
-        b = feeds["cross_k"].shape[1]
+        b = feeds["cross_k_1"].shape[0] if self.layered else feeds["cross_k"].shape[1]
+        assert ("cross_k" in feeds) != self.layered
         assert ids.dtype == np.int64 and ids.shape == (b, 1) and past.shape[1] == b
         assert past.shape[3] == pos  # one cached row per earlier token
         logits = np.zeros((b, 1, 6), np.float32)
@@ -42,8 +47,9 @@ class ScriptedDecoder:
         return [logits, grown, grown]
 
 
-def session(script, batch=trocr.BATCH):
-    return SimpleNamespace(encoder=FakeEncoder(), decoder=ScriptedDecoder(script), tokenizer=TOKENIZER, batch=batch)
+def session(script, batch=trocr.BATCH, layered=False):
+    return SimpleNamespace(encoder=FakeEncoder(), decoder=ScriptedDecoder(script, layered), tokenizer=TOKENIZER,
+                           batch=batch)
 
 
 def lines_image(n):
@@ -61,6 +67,11 @@ def test_each_line_decoded_and_joined_with_newline():
     s = session([4, 5, 2])
     assert trocr.recognize_with_session(s, lines_image(2)) == "កខ\nកខ"
     assert s.decoder.calls == 3  # both lines in one batch, in lockstep
+
+
+def test_per_layer_cross_inputs_decode_the_same():
+    s = session([4, 5, 2], layered=True)
+    assert trocr.recognize_with_session(s, lines_image(2)) == "កខ\nកខ"
 
 
 def test_fixed_batch_model_decodes_one_line_at_a_time():
