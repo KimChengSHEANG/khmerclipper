@@ -75,6 +75,18 @@ class DecoderStep(torch.nn.Module):
             self.pos_table, self.pos_offset = dec.embed_positions.weight, dec.embed_positions.offset
         else:
             self.pos_table, self.pos_offset = dec.embed_positions.weights, dec.embed_positions.padding_idx + 1
+        # Same function, edited weights: each self-attention's Q, K, V as one [3E, E] matmul (one
+        # activation quantization instead of three in the int8 decoder), attention scaling folded into Q.
+        self.qkv, self.cq = torch.nn.ModuleList(), torch.nn.ModuleList()
+        for layer in self.layers:
+            sa, ca = layer.self_attn, layer.encoder_attn
+            fused = torch.nn.Linear(sa.embed_dim, 3 * sa.embed_dim)
+            fused.weight.data = torch.cat([sa.q_proj.weight * sa.scaling, sa.k_proj.weight, sa.v_proj.weight])
+            fused.bias.data = torch.cat([sa.q_proj.bias * sa.scaling, sa.k_proj.bias, sa.v_proj.bias])
+            self.qkv.append(fused)
+            cq = torch.nn.Linear(ca.embed_dim, ca.embed_dim)
+            cq.weight.data, cq.bias.data = ca.q_proj.weight * ca.scaling, ca.q_proj.bias * ca.scaling
+            self.cq.append(cq)
 
     def forward(self, input_ids, position, past_k, past_v, *cross):
         cross_k, cross_v = cross[0::2], cross[1::2]
@@ -84,14 +96,15 @@ class DecoderStep(torch.nn.Module):
         new_k, new_v = [], []
         for i, layer in enumerate(self.layers):
             sa = layer.self_attn
-            k = torch.cat([past_k[i], heads(sa, sa.k_proj(h))], dim=2)
-            v = torch.cat([past_v[i], heads(sa, sa.v_proj(h))], dim=2)
+            q, k, v = self.qkv[i](h).chunk(3, dim=-1)
+            k = torch.cat([past_k[i], heads(sa, k)], dim=2)
+            v = torch.cat([past_v[i], heads(sa, v)], dim=2)
             new_k.append(k)
             new_v.append(v)
-            h = layer.self_attn_layer_norm(h + sa.out_proj(attend(sa, heads(sa, sa.q_proj(h) * sa.scaling), k, v)))
+            h = layer.self_attn_layer_norm(h + sa.out_proj(attend(sa, heads(sa, q), k, v)))
             ca = layer.encoder_attn
             h = layer.encoder_attn_layer_norm(
-                h + ca.out_proj(attend(ca, heads(ca, ca.q_proj(h) * ca.scaling), cross_k[i], cross_v[i])))
+                h + ca.out_proj(attend(ca, heads(ca, self.cq[i](h)), cross_k[i], cross_v[i])))
             h = layer.final_layer_norm(h + layer.fc2(layer.activation_fn(layer.fc1(h))))
         return self.output_projection(h), torch.stack(new_k), torch.stack(new_v)
 
