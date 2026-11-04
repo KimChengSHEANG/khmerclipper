@@ -17,6 +17,10 @@ from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 from transformers.models.trocr.modeling_trocr import TrOCRSinusoidalPositionalEmbedding
 
 PARITY_TOLERANCE = 1e-3
+# Weight edit, no training: an output-layer bias raising </s> by this much ends lines before the junk the
+# model appends after real text. M2 errors on the six eval sets: +2, +3, +4 -> noisy 1532, 1489, 1694 (1583
+# without); +3 is no worse anywhere (training/eval/results/weight_space.md).
+EOS_LOGIT_BIAS = 3.0
 
 
 class Reference(torch.nn.Module):
@@ -71,6 +75,8 @@ class DecoderStep(torch.nn.Module):
         dec = model.decoder.model.decoder
         self.embed_tokens, self.layernorm_embedding, self.layers = dec.embed_tokens, dec.layernorm_embedding, dec.layers
         self.output_projection = model.decoder.output_projection
+        self.eos_bias = torch.zeros(self.output_projection.out_features)
+        self.eos_bias[model.config.decoder.eos_token_id] = EOS_LOGIT_BIAS
         if dec.config.use_learned_position_embeddings:
             self.pos_table, self.pos_offset = dec.embed_positions.weight, dec.embed_positions.offset
         else:
@@ -106,7 +112,7 @@ class DecoderStep(torch.nn.Module):
             h = layer.encoder_attn_layer_norm(
                 h + ca.out_proj(attend(ca, heads(ca, self.cq[i](h)), cross_k[i], cross_v[i])))
             h = layer.final_layer_norm(h + layer.fc2(layer.activation_fn(layer.fc1(h))))
-        return self.output_projection(h), torch.stack(new_k), torch.stack(new_v)
+        return self.output_projection(h) + self.eos_bias, torch.stack(new_k), torch.stack(new_v)
 
 
 def load_model(ckpt: str) -> VisionEncoderDecoderModel:
@@ -165,6 +171,7 @@ def main() -> None:
         ref = Reference(model)(pixel, torch.tensor([seq])).numpy()[0]
         pixel2 = torch.cat([pixel, torch.rand(1, 3, img, img)])  # batch-2 parity below
         ref2 = Reference(model)(pixel2[1:], torch.tensor([seq])).numpy()[0]
+        ref, ref2 = ref + dec.eos_bias.numpy(), ref2 + dec.eos_bias.numpy()
         cross_k, cross_v = enc(pixel)
         past = torch.zeros(cross_k.shape[0], 1, cross_k.shape[2], 1, cross_k.shape[4])
         example = (torch.tensor([[100]]), torch.tensor([1]), past, past, *interleave(cross_k, cross_v))

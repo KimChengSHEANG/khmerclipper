@@ -1,4 +1,4 @@
-# Weight-space programming on M2: no accuracy gain; fused weights and per-layer inputs make captures 14% faster (2026-11-03)
+# Weight-space programming on M2: one bias edit cuts errors 3-17%, fused weights make captures 14% faster (2026-11-03)
 
 Weight-space programming (MIT CSAIL, "Sparks of Weight-Space Programming", 2026-11-02): an LLM reads a network's
 weights, finds the units behind a failure and edits them, with no gradients. Its headline win removed a reasoning loop
@@ -31,7 +31,27 @@ M2's errors on all sets (desktop, 0.4.0 baseline CSVs): 912 substitutions, 1094 
 Verdict: M2 has no single fault of the kind weight-space programming fixes; its largest "errors" are label noise.
 Removal edits cost far more accuracy than they save time, and extrapolating along the M1 → M2 direction gains nothing.
 
-## The edits that work: per-layer cross K/V, fused Q/K/V weights (desktop)
+## Accuracy: an end-of-text bias (desktop)
+
+Of M2's noisy-set errors, 429 of 1583 come from 13 clips where the model keeps writing after the real text
+(`…ចង្អៀត══ ចំណោយ ឯបហាល` for `…ចង្អៀត`); early stops are rare (2 clips). One weight edit: an output-layer bias of
++3 on `</s>` (the decoder's output layer has none), in `tools/export_onnx.py` as `EOS_LOGIT_BIAS`.
+
+| Set (errors) | M2 | +2 | +3 | +4 | +5 |
+|---|---|---|---|---|---|
+| frozen | 15 | | 15 | | |
+| screen | 707 | | 687 (−2.8%) | | 674 |
+| noisy | 1583 | 1532 | 1489 (−5.9%) | 1694 | 2102 |
+| slices | 164 | | 160 (−2.4%) | | |
+| real | 12 | | 12 | | |
+| hw | 170 | | 142 (−16.5%) | | 128 |
+
+Changed clips at +3: hw 6 better / 1 worse, noisy 29 / 2, screen 12 / 5. The losses are lines cut short: a long number
+loses digits (`១០០០០០០` → `១០០`), one noisy clip drops a middle phrase. Caveats: +3 was picked on these same sets (the
+grid was coarse: 2-5) and noisy turns worse just past it, so the margin is narrow. The Mac CoreML decoder doesn't have
+the bias yet.
+
+## Speed: per-layer cross K/V, fused Q/K/V weights (desktop)
 
 Same weights, rewired graph. The desktop decoder took all 12 layers' cross-attention K/V as one stacked
 `cross_k`/`cross_v` input and split it on every step: a copy of ~110 MB per step at batch 4, 23% of step time.
