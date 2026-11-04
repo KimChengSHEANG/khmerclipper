@@ -48,8 +48,20 @@ Of M2's noisy-set errors, 429 of 1583 come from 13 clips where the model keeps w
 
 Changed clips at +3: hw 6 better / 1 worse, noisy 29 / 2, screen 12 / 5. The losses are lines cut short: a long number
 loses digits (`១០០០០០០` → `១០០`), one noisy clip drops a middle phrase. Caveats: +3 was picked on these same sets (the
-grid was coarse: 2-5) and noisy turns worse just past it, so the margin is narrow. The Mac CoreML decoder doesn't have
-the bias yet.
+grid was coarse: 2-5) and noisy turns worse just past it, so the margin is narrow.
+
+The Mac CoreML decoder (`apps/mac/tools/trocr/kv_decoder.py`, `make trocr-khmer`), same +3, OCRBench:
+
+| Set (errors) | M2 | +3 |
+|---|---|---|
+| frozen | 15 | 15 |
+| screen | 707 | 684 (−3.3%) |
+| noisy | 1601 | 1473 (−8.0%) |
+| slices | 163 | 160 (−1.8%) |
+| real | 12 | 12 |
+| hw | 171 | 140 (−18.1%) |
+
+Speed unchanged (median ms per set within 1-2%, except real: 4 clips).
 
 ## Speed: per-layer cross K/V, fused Q/K/V weights (desktop)
 

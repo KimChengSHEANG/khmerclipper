@@ -44,4 +44,4 @@ def test_step_logits_match_full_decoder(learned_pos: bool) -> None:
     for pos in range(seq.shape[1]):
         attn, write = masks(pos)
         got = step(seq[:, pos : pos + 1].int(), torch.tensor([pos], dtype=torch.int32), attn, write, ck, cv)
-        torch.testing.assert_close(got[0, 0], want[0, pos], atol=1e-4, rtol=1e-4)
+        torch.testing.assert_close(got[0, 0], want[0, pos] + step.eos_bias, atol=1e-4, rtol=1e-4)

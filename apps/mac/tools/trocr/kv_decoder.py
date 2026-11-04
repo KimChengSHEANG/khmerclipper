@@ -15,6 +15,11 @@ inputs. Recomputing them per step cost ~14 GFLOP/step on trocr-base.
 import torch
 from torch import nn
 
+# Weight edit, no training: an output-layer bias raising </s>, so lines end before the junk the model appends
+# after real text. Same value as the desktop export (apps/desktop/tools/export_onnx.py); results in
+# training/eval/results/weight_space.md.
+EOS_LOGIT_BIAS = 3.0
+
 
 class KVDecoderStep(nn.Module):
     def __init__(self, model, max_len: int, cache_dtype: torch.dtype = torch.float32):
@@ -25,6 +30,9 @@ class KVDecoderStep(nn.Module):
         self.layernorm_embedding = dec.layernorm_embedding
         self.layers = dec.layers
         self.output_projection = causal_lm.output_projection
+        eos_bias = torch.zeros(self.output_projection.out_features)
+        eos_bias[model.config.decoder.eos_token_id] = EOS_LOGIT_BIAS
+        self.register_buffer("eos_bias", eos_bias, persistent=False)
         if dec.config.use_learned_position_embeddings:
             pos_table = dec.embed_positions.weight            # index = position + 2
             self.pos_offset = dec.embed_positions.offset
@@ -76,4 +84,4 @@ class KVDecoderStep(nn.Module):
             h = layer.encoder_attn_layer_norm(h + ca.out_proj(self._attend(q, cross_k[i], cross_v[i], None)))
 
             h = layer.final_layer_norm(h + layer.fc2(layer.activation_fn(layer.fc1(h))))
-        return self.output_projection(h)
+        return self.output_projection(h) + self.eos_bias.to(h.dtype)
