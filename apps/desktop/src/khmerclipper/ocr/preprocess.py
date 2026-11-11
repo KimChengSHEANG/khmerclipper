@@ -434,14 +434,17 @@ def text_mask_parts(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
 
 EDGE_FRAGMENT = 0.6  # an edge-touching run shorter than this x the median other run is a cut-off line ...
 EDGE_CUT = 0.5       # ... if its edge row is this dense vs its densest row (the cut sliced through glyphs)
+EDGE_BODY = 0.75     # an edge run under EDGE_BODY_TALL x a line whose edge row is this dense was cut through
+EDGE_BODY_TALL = 0.85  # its letter bodies: most of a neighbouring line (KHOB scans, results/weight_space.md)
 
 
 def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray | None = None) -> list[list[int]]:
     """Drop the first run when it touches the top edge, and the last when it touches the bottom,
     if it is shorter than EDGE_FRAGMENT x the median height of the runs not on an edge and (given
     the row-ink `profile`) its edge row is dense: what is left of a line the selection sliced
-    through. A real short line in a tight crop ends in sparse stroke tips (review I2). Never drops
-    the only line or a full-height one."""
+    through. A real short line in a tight crop ends in sparse stroke tips (review I2). A taller
+    edge run is dropped too when its edge row is EDGE_BODY dense: the selection took in most of the
+    next line and cut through its letters. Never drops the only line or a full-height one."""
     inner = [hi - lo + 1 for k, (lo, hi) in enumerate(runs)
              if not (k == 0 and lo == 0) and not (k == len(runs) - 1 and hi == height - 1)]
     if not inner and len(runs) > 1:
@@ -450,15 +453,22 @@ def drop_edge_fragments(runs: list[list[int]], height: int, profile: np.ndarray 
         inner = [max(hi - lo + 1 for lo, hi in runs)]
     if not inner:
         return runs
-    cut = EDGE_FRAGMENT * float(np.median(inner))
+    full = float(np.median(inner))
+    cut = EDGE_FRAGMENT * full
 
-    def sliced(lo: int, hi: int, edge: int) -> bool:
-        return profile is None or profile[edge] >= EDGE_CUT * profile[lo:hi + 1].max()
+    def dense(lo: int, hi: int, edge: int, share: float) -> bool:
+        return profile[edge] >= share * profile[lo:hi + 1].max()
+
+    def cut_off(lo: int, hi: int, edge: int) -> bool:
+        n = hi - lo + 1
+        if profile is None:
+            return n < cut
+        return (n < cut and dense(lo, hi, edge, EDGE_CUT)) or (n < EDGE_BODY_TALL * full and dense(lo, hi, edge, EDGE_BODY))
 
     out = list(runs)
-    if out[-1][1] == height - 1 and out[-1][1] - out[-1][0] + 1 < cut and sliced(*out[-1], height - 1):
+    if out[-1][1] == height - 1 and cut_off(*out[-1], height - 1):
         out.pop()
-    if out and out[0][0] == 0 and out[0][1] - out[0][0] + 1 < cut and sliced(*out[0], 0):
+    if out and out[0][0] == 0 and cut_off(*out[0], 0):
         out.pop(0)
     return out or runs
 

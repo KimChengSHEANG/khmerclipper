@@ -116,3 +116,39 @@ mostly fixes short lines the model ran past. Task 3 is small low-resolution page
 Mac: CoreML via OCRBench (median 324 ms/line). Desktop: the exported decoder in fp32 on an RTX 3090 (CUDA provider,
 cross K/V and the cache kept on the GPU; median 406 ms/line, mostly CPU pipeline time) without Tesseract, so
 Latin-only lines keep the model's text; int8 matched fp32 within 0.5% on the noisy set.
+
+### Against Chakkhu, and neighbour lines (2026-11-11)
+
+[Chakkhu](https://huggingface.co/muyleanging/Chakkhu-OCR-Khmer-ONNX) (Ing Muyleang, Apache-2.0, 39 MB int8, CNN +
+transformer, CTC + small decoder, Khmer cluster tokens) reports 4.5% CER on 4,018 KHOB lines it re-cut after aligning
+each scan to its clean page. On our crops (int8, beam 4), pooled CER:
+
+| Set | M2 + bias (Mac) | Chakkhu |
+|---|---|---|
+| KHOB, all 1,862 | 23.4% | 14.5% |
+| KHOB without task-2 goc_3, goc_4 (their images show another letter; Chakkhu drops 2 such pages) | 20.0% | 12.0% |
+| frozen / screen / noisy / slices / hw | 0.4 / 1.7 / 5.2 / 1.0 / 3.4% | 4.4 / 49.3 / 70.7 / 3.0 / 19.9% |
+
+Chakkhu has no clip preprocessing: underlines, avatars, frames and two-line clips break it. On KHOB M2 substituted
+fewer characters (6,732 vs 7,723); its deficit was extra text: 258 lines gave 91% of its 19,163 extra characters, the
+labelled line read correctly plus the next one. KHOB's scans have tight line spacing, so the box takes in most of a
+neighbour line, 60-100% as tall as the main one and cut through its letter bodies; `drop_edge_fragments` only dropped
+edge runs under 0.6 of a line. Now an edge run under 0.85 of a line whose edge row is 0.75 as dense as its densest row
+is dropped too (desktop `preprocess.EDGE_BODY`, Mac `TrOCREngine.edgeBody`). Multi-strip KHOB crops: 282 -> 140.
+
+Errors, same model, old vs new rule (desktop: fp32 on the 3090 without Tesseract):
+
+| Set | Mac before | Mac after | Desktop before | Desktop after |
+|---|---|---|---|---|
+| frozen | 11 | 11 | 20 | 20 |
+| screen | 684 | 684 | 680 | 680 |
+| noisy | 1,473 | 1,363 (−7.5%) | 1,472 | 1,364 (−7.3%) |
+| slices | 160 | 160 | 158 | 158 |
+| real | 12 | 12 | 12 | 12 |
+| hw | 140 | 133 (−5.0%) | 122 | 115 (−5.7%) |
+| KHOB, all | 28,108 (23.4%) | 20,784 (17.3%) | 28,142 (23.4%) | 20,729 (17.2%) |
+| KHOB without the 2 pages | 23,345 (20.0%) | 16,466 (14.1%) | 23,380 (20.1%) | 16,412 (14.1%) |
+
+Left: task-3 scans (small, low-resolution; TrOCR squashes a line into 384 x 384, Chakkhu keeps 64 px height at full
+width) and the 140 crops still split. Ideas for a retrain from Chakkhu: a CTC head (it ties output length to the
+image, the run-on the +3 bias patches), cluster tokens, line confidence (best-of-both per line: KHOB 12.3%, noisy 3.9%).

@@ -537,7 +537,7 @@ enum TrOCREngine {
     static let lineAspect = 8.0, lineThick = 3, lineThickRel = 0.2
     static let blockFill = 0.6, blockHeight = 1.8, ruleLength = 3.0
     static let maxInk = 0.3, minKept = 0.3, heightPct = 90.0
-    static let edgeFragment = 0.6, edgeCut = 0.5
+    static let edgeFragment = 0.6, edgeCut = 0.5, edgeBody = 0.75, edgeBodyTall = 0.85
 
     typealias Box = (x0: Int, y0: Int, x1: Int, y1: Int, area: Int)
 
@@ -672,8 +672,10 @@ enum TrOCREngine {
 
     /// Drops the first run when it touches the top edge, and the last when it
     /// touches the bottom, if shorter than edgeFragment x the median of the other
-    /// runs: what is left of a line the selection sliced through. Never drops the
-    /// only line or a full-height one. Mirrors pipeline.drop_edge_fragments.
+    /// runs: what is left of a line the selection sliced through. A taller edge run
+    /// (under edgeBodyTall x a line) goes too when its edge row is edgeBody dense: the
+    /// selection took in most of the next line and cut through its letters (KHOB scans).
+    /// Never drops the only line or a full-height one. Mirrors pipeline.drop_edge_fragments.
     static func dropEdgeFragments(_ runs: [(lo: Int, hi: Int)], height: Int, profile: [Double]?) -> [(lo: Int, hi: Int)] {
         var inner = runs.enumerated().filter { k, r in
             !(k == 0 && r.lo == 0) && !(k == runs.count - 1 && r.hi == height - 1)
@@ -682,18 +684,19 @@ enum TrOCREngine {
         // bottom: noisy-edgecut-029): judge the edge runs against the tallest one.
         if inner.isEmpty && runs.count > 1 { inner = [runs.map { $0.hi - $0.lo + 1 }.max()!] }
         guard !inner.isEmpty else { return runs }
-        let cut = edgeFragment * percentile(inner, 50)
+        let full = percentile(inner, 50)
+        let cut = edgeFragment * full
         // A cut line's edge row slices through glyph bodies; a real short line in a tight crop
         // ends in sparse stroke tips (review I2).
-        func sliced(_ r: (lo: Int, hi: Int), _ edge: Int) -> Bool {
-            guard let profile else { return true }
-            return profile[edge] >= edgeCut * profile[r.lo...r.hi].max()!
+        func cutOff(_ r: (lo: Int, hi: Int), _ edge: Int) -> Bool {
+            let n = Double(r.hi - r.lo + 1)
+            guard let profile else { return n < cut }
+            let dense = profile[edge] / profile[r.lo...r.hi].max()!
+            return (n < cut && dense >= edgeCut) || (n < edgeBodyTall * full && dense >= edgeBody)
         }
         var out = runs
-        if let last = out.last, last.hi == height - 1, Double(last.hi - last.lo + 1) < cut, sliced(last, height - 1) {
-            out.removeLast()
-        }
-        if let first = out.first, first.lo == 0, Double(first.hi - first.lo + 1) < cut, sliced(first, 0) { out.removeFirst() }
+        if let last = out.last, last.hi == height - 1, cutOff(last, height - 1) { out.removeLast() }
+        if let first = out.first, first.lo == 0, cutOff(first, 0) { out.removeFirst() }
         return out.isEmpty ? runs : out
     }
 

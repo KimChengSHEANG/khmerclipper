@@ -148,6 +148,17 @@ def test_edge_fragment_needs_a_sliced_edge_row():
     assert P.drop_edge_fragments([[0, 4], [10, 30], [40, 60]], 80, cut) == [[10, 30], [40, 60]]
 
 
+def test_edge_line_sliced_through_its_body_is_dropped_even_when_tall():
+    # KHOB task-3 scans: the box takes in most of the next line, cut through its letter bodies.
+    body = np.zeros(80)
+    body[0:20] = body[30:50] = 100.0
+    body[64:80] = 95.0  # 16 rows (0.8 x a line), dense down to the edge
+    assert P.drop_edge_fragments([[0, 19], [30, 49], [64, 79]], 80, body) == [[0, 19], [30, 49]]
+    tips = body.copy()
+    tips[75:80] = 20.0  # same height, but the edge row holds only stroke tips: a whole short line
+    assert P.drop_edge_fragments([[0, 19], [30, 49], [64, 79]], 80, tips) == [[0, 19], [30, 49], [64, 79]]
+
+
 def test_band_background_needs_to_explain_more_of_the_clip():
     # Review I1: on a noisy dark photo the background spreads over many colour bins, so flat light
     # text touching the edges wins the band's mode. That colour makes the photo "ink": keep the corners.

@@ -662,6 +662,19 @@ final class TrOCRNoiseTests: XCTestCase {
                        [[10, 30], [40, 60]])
     }
 
+    func testEdgeLineSlicedThroughItsBodyIsDroppedEvenWhenTall() {
+        // KHOB task-3 scans: the box takes in most of the next line, cut through its letter bodies.
+        func pairs(_ r: [(lo: Int, hi: Int)]) -> [[Int]] { r.map { [$0.lo, $0.hi] } }
+        var body = [Double](repeating: 0, count: 80)
+        for y in 0..<20 { body[y] = 100 }; for y in 30..<50 { body[y] = 100 }; for y in 64..<80 { body[y] = 95 }
+        XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 19), (30, 49), (64, 79)], height: 80, profile: body)),
+                       [[0, 19], [30, 49]])
+        var tips = body
+        for y in 75..<80 { tips[y] = 20 }  // same height, edge row only stroke tips: a whole short line
+        XCTAssertEqual(pairs(TrOCREngine.dropEdgeFragments([(0, 19), (30, 49), (64, 79)], height: 80, profile: tips)),
+                       [[0, 19], [30, 49], [64, 79]])
+    }
+
     func testBandBackgroundNeedsToExplainMoreOfTheClip() {
         // Review I1: noisy dark photo, flat light strokes crossing the edge band; corners on background.
         let w = 200, h = 60
