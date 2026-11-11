@@ -93,3 +93,26 @@ int8 scales are per output row, so the fused matrix quantizes to the same intege
 The two A/B runs differ in absolute time because of machine load; each compares models run alternately under the same
 load. Export parity 3.0e-5 (fused), 4.7e-5 (per-layer). Shipping it needs a new ONNX upload and manifest pin, so desktop users would download the model
 again (~700 MB). The Mac CoreML model has its own conversion and is untouched.
+
+## KHOB (2026-11-11)
+
+KHOB level 1 (EKYCSolutions/khmer-ocr-benchmark-dataset, 31-01-2026 release), 1,862 line crops from
+`scripts/build_khob_fixtures.py`. An earlier local `fixtures_khob` predated the task-3/4 point scaling in that script:
+its task-3/4 crops showed the wrong lines (pooled CER 0.82 / 1.20). Rebuilt before these runs.
+
+Errors / label characters (pooled CER), M2 vs M2 with the +3 end-of-text bias:
+
+| Task (chars) | Mac base | Mac +3 | Desktop base | Desktop +3 |
+|---|---|---|---|---|
+| task-1 (29,589) | 750 (0.025) | 741 (0.025) | 750 (0.025) | 744 (0.025) |
+| task-2 (30,290) | 5,767 (0.190) | 5,683 (0.188) | 5,747 (0.190) | 5,657 (0.187) |
+| task-3 (30,245) | 17,251 (0.570) | 16,946 (0.560) | 17,298 (0.572) | 16,962 (0.561) |
+| task-4 (30,248) | 4,993 (0.165) | 4,738 (0.157) | 5,055 (0.167) | 4,779 (0.158) |
+| all (120,372) | 28,761 (0.239) | 28,108 (0.234) | 28,850 (0.240) | 28,142 (0.234) |
+| mean per-line CER | 0.283 | 0.234 | 0.284 | 0.234 |
+
+Better on every task on both platforms, −2.3% errors overall; mean per-line CER drops more (−17%) because the bias
+mostly fixes short lines the model ran past. Task 3 is small low-resolution page scans: correct crops, still 0.56.
+Mac: CoreML via OCRBench (median 324 ms/line). Desktop: the exported decoder in fp32 on an RTX 3090 (CUDA provider,
+cross K/V and the cache kept on the GPU; median 406 ms/line, mostly CPU pipeline time) without Tesseract, so
+Latin-only lines keep the model's text; int8 matched fp32 within 0.5% on the noisy set.
