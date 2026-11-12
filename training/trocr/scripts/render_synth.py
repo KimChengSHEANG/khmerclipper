@@ -28,7 +28,7 @@ from datasets import Image as DSImage
 
 from trocr_khmer.data_sources import resolve_dataset
 from trocr_khmer.synth import (augment_case, build_corpus, corpus_part, is_latin_only, load_fonts, render_handwriting_sample,
-                               render_sample, render_screen_sample, require_raqm)
+                               render_sample, render_scan_sample, render_screen_sample, require_raqm)
 
 EVAL = Path(__file__).resolve().parents[2] / "eval"
 FEATURES = Features(
@@ -66,9 +66,25 @@ def english_texts(k: int) -> list[str]:
     return out
 
 
+def khmer_wiki_texts(k: int) -> list[str]:
+    """First k Khmer Wikipedia paragraphs (CC BY-SA 4.0; streamed): formal prose like official letters."""
+    out: list[str] = []
+    for article in load_dataset("wikimedia/wikipedia", "20231101.km", split="train", streaming=True):
+        out += [p.strip() for p in article["text"].split("\n") if len(p.strip()) > 20]
+        if len(out) >= k:
+            return out[:k]
+    return out
+
+
 def eval_texts() -> list[str]:
-    labels = (EVAL / "fixtures/labels.jsonl").read_text(encoding="utf-8").splitlines()
-    texts = [json.loads(line)["text"] for line in labels if line.strip()]
+    """Every eval label, so no eval line is rendered into training: all fixture sets present
+    (fixtures_khob is local-only), the UI strings, and the held-out handwriting test splits."""
+    texts = []
+    for labels in sorted(EVAL.glob("fixtures*/labels.jsonl")):
+        texts += [json.loads(line)["text"] for line in labels.read_text(encoding="utf-8").splitlines() if line.strip()]
+    for name in ("handwriting_test", "thareah_test"):
+        spec = resolve_dataset(name)
+        texts += load_dataset(spec.path, split="train", **spec.load_kwargs())[spec.text_col]
     for name in ("ui_strings.txt", "en_ui_strings.txt"):
         texts += (EVAL / name).read_text(encoding="utf-8").splitlines()
     return texts
@@ -94,6 +110,9 @@ def main() -> None:
     p.add_argument("--screen_dark", type=float, default=0.3, help="--screen share of dark panels")
     p.add_argument("--screen_bold", type=float, default=0.0, help="--screen share drawn bold")
     p.add_argument("--handwriting", action="store_true", help="handwriting-looking lines (v6)")
+    p.add_argument("--doc", action="store_true",
+                   help="document lines at scan resolution with neighbour slivers (v8, render_scan_sample)")
+    p.add_argument("--wiki_km", type=int, default=0, help="add N Khmer Wikipedia paragraphs")
     p.add_argument("--screen_busy", type=float, default=0.0,
                    help="--screen share set on photo / gradient / texture panels (v5)")
     p.add_argument("--colon_prefix", type=float, default=0.0,
@@ -109,6 +128,8 @@ def main() -> None:
     texts = [t for name in args.text_sources for t in load_texts(name, args.texts_per_source, args.seed)]
     if args.english_texts:
         texts += english_texts(args.english_texts)
+    if args.wiki_km:
+        texts += khmer_wiki_texts(args.wiki_km)
     corpus = [c for c in build_corpus(texts, eval_texts(), args.max_chars) if corpus_part(c) == args.part]
     if args.latin_only:
         corpus = [c for c in corpus if is_latin_only(c)]
@@ -131,6 +152,10 @@ def main() -> None:
             text = colon_prefix(rng) + text
         if args.handwriting:
             sample = render_handwriting_sample(text, fonts, rng)
+        elif args.doc:
+            # A page line has a line above and below ~85% of the time (first / last lines don't).
+            near = tuple(corpus[rng.randrange(len(corpus))] if rng.random() < 0.85 else None for _ in range(2))
+            sample = render_scan_sample(text, near, fonts, rng)
         elif args.screen:
             # Neighbour lines exist ~75% of the time (strips at a clip's top / bottom edge have none).
             near = tuple(corpus[rng.randrange(len(corpus))] if rng.random() < 0.75 else None for _ in range(2))

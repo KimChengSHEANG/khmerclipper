@@ -295,6 +295,89 @@ def render_screen_sample(text: str, neighbours: tuple[str | None, str | None], f
     return image, {"font": font.path.name, "kind": font.kind, "style": style, "italic": italic}
 
 
+DOC_STYLES = {"pdf": 0.25, "scan": 0.45, "phone": 0.3}
+KHMER_OS_P = 0.6  # Cambodian government letters are set in the Khmer OS family
+
+
+def render_scan_sample(text: str, neighbours: tuple[str | None, str | None], fonts: list[FontInfo],
+                       rng: random.Random, heights: tuple[int, int] = (12, 30)):
+    """One line cut from a document page the way KHOB's boxes cut it (v8): a box around the line
+    plus a margin that takes in part of the lines above / below (cut through their letters), at
+    scan resolution, slightly rotated, then a PDF, scanner or phone-camera look. The label is the
+    middle line only, so the model learns to ignore neighbour slivers (results/weight_space.md).
+    ``heights`` is the main line's final ink height in px. Returns ``(image, meta)`` or ``None``."""
+    lines = [t for t in (neighbours[0], text, neighbours[1]) if t]
+    usable = [f for f in fonts if f.kind == "text" and all(covers(f, t) for t in lines)]
+    if not usable:
+        return None
+    khmer_os = [f for f in usable if f.path.name.startswith("KhmerOS")]
+    font = rng.choice(khmer_os if khmer_os and rng.random() < KHMER_OS_P else usable)
+    size = rng.randint(28, 44)
+    face = ImageFont.truetype(str(font.path), size, layout_engine=ImageFont.Layout.RAQM)
+    ascent, descent = face.getmetrics()
+    band = ascent + descent
+    pitch = int(band * rng.uniform(0.85, 1.25))  # documents set lines tight; marks of neighbours overlap
+    draw0 = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    widths = [draw0.textlength(t, font=face) for t in lines]
+    mid = lines.index(text) if neighbours[0] is None else 1
+    paper = rng.randint(215, 255)
+    ink = rng.randint(0, 80)
+    bg, fg = (paper, paper, rng.randint(paper - 20, paper)), (ink, ink, ink + rng.randint(0, 30))
+    pad = band
+    image = Image.new("RGB", (int(max(widths)) + 2 * pad, band * 2 + pitch * (len(lines) - 1) + 2 * pad), bg)
+    draw = ImageDraw.Draw(image)
+    tops = [pad + band // 2 + k * pitch for k in range(len(lines))]
+    for t, y in zip(lines, tops):
+        draw.text((pad, y), t, font=face, fill=fg, anchor="la")
+    # KHOB's box: the line's band plus a margin, then the page's skew inside that box.
+    y0 = tops[mid] - int(band * rng.uniform(-0.05, 0.45))
+    y1 = tops[mid] + band + int(band * rng.uniform(-0.05, 0.45))
+    x0 = pad - int(size * rng.uniform(0.0, 0.5))
+    x1 = pad + int(widths[mid]) + int(size * rng.uniform(0.0, 0.8))
+    image = image.crop((max(0, x0), max(0, y0), min(image.width, x1), min(image.height, y1)))
+    if rng.random() < 0.6:
+        image = image.rotate(rng.uniform(-1.2, 1.2), resample=Image.Resampling.BICUBIC, fillcolor=bg)
+    scale = rng.uniform(*heights) / band
+    small = (max(8, round(image.width * scale)), max(6, round(image.height * scale)))
+    image = image.resize(small, Image.Resampling.BOX)
+    style = rng.choices(list(DOC_STYLES), weights=list(DOC_STYLES.values()))[0]
+    if style == "scan":
+        image = _scan_look(image, rng)
+    elif style == "phone":
+        image = _phone_look(image, rng)
+    return image, {"font": font.path.name, "kind": font.kind, "style": f"doc_{style}", "italic": False}
+
+
+def _jpeg(image: Image.Image, rng: random.Random, lo: int = 30, hi: int = 85) -> Image.Image:
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=rng.randint(lo, hi))
+    buf.seek(0)
+    return Image.open(buf).convert("RGB")
+
+
+def _scan_look(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Flatbed / photocopy: blur, grain, JPEG. (No black-and-white threshold: at 12-30 px it shatters
+    the letters into specks the label can't describe.)"""
+    if rng.random() < 0.5:
+        image = image.filter(ImageFilter.GaussianBlur(rng.uniform(0.3, 0.9)))
+    px = np.asarray(image, dtype=np.float32)
+    px = px + np.random.default_rng(rng.getrandbits(32)).normal(0, rng.uniform(3, 12), px.shape[:2] + (1,))
+    return _jpeg(Image.fromarray(np.clip(px, 0, 255).astype(np.uint8)), rng)
+
+
+def _phone_look(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Phone photo of paper: uneven light across the line, a colour cast, soft focus, JPEG."""
+    w, h = image.size
+    px = np.asarray(image, dtype=np.float32)
+    ramp = np.linspace(rng.uniform(0.6, 1.0), rng.uniform(0.6, 1.0), w)[None, :, None]
+    cast = np.array([rng.uniform(0.85, 1.05), rng.uniform(0.85, 1.05), rng.uniform(0.8, 1.05)])
+    px = px * ramp * cast
+    out = Image.fromarray(np.clip(px, 0, 255).astype(np.uint8))
+    if rng.random() < 0.7:
+        out = out.filter(ImageFilter.GaussianBlur(rng.uniform(0.4, 1.1)))
+    return _jpeg(out, rng, 25, 75)
+
+
 BUSY_KINDS = ("gradient", "blobs", "fractal", "scene")
 
 
@@ -411,14 +494,23 @@ def build_corpus(texts, exclude, max_chars: int = 32, min_chars: int = 2) -> lis
     banned = {e.strip() for e in exclude if e.strip()}
     for text in list(banned):
         banned.update(chunk_line(text, max_chars))
-    contained = [b for b in banned if len(b) >= 4]
+    # Banned strings indexed by their first 4 characters: a chunk is checked with one lookup per
+    # position instead of a scan of every banned string (thousands once every eval set is banned).
+    by_prefix: dict[str, list[str]] = {}
+    for b in banned:
+        if len(b) >= 4:
+            by_prefix.setdefault(b[:4], []).append(b)
+
+    def contains_banned(chunk: str) -> bool:
+        return any(chunk.startswith(b, i) for i in range(len(chunk) - 3) for b in by_prefix.get(chunk[i:i + 4], ()))
+
     seen: set[str] = set()
     out: list[str] = []
     for text in texts:
         for chunk in chunk_line(text, max_chars):
             if len(chunk) < min_chars or chunk in seen or chunk in banned:
                 continue
-            if any(b in chunk for b in contained):
+            if contains_banned(chunk):
                 continue
             seen.add(chunk)
             out.append(chunk)

@@ -84,6 +84,14 @@ DATASET_REGISTRY = {
     "synth_hand_v7": DatasetSpec("parquet", data_files=["cache/synth_hand_v7/train/*/*.parquet"]),
     "cadt": DatasetSpec("parquet", data_files=["cache/cadt/train/*.parquet"]),
     "cadt_test": DatasetSpec("parquet", data_files=["cache/cadt/test/*.parquet"]),
+    # v8: Thareah/khmer-handwriting (MIT): 147 scanned pages, split by page; its test split is eval only.
+    "thareah": DatasetSpec("parquet", data_files=["cache/thareah/train/*.parquet"]),
+    "thareah_test": DatasetSpec("parquet", data_files=["cache/thareah/test/*.parquet"]),
+    # v8: document lines at scan resolution with neighbour slivers, Khmer Wikipedia text (render_synth.py --doc).
+    "synth_doc": DatasetSpec("parquet", data_files=["cache/synth_doc/train/*/*.parquet"]),
+    # v8b: ODC law scans pseudo-labelled by Chakkhu at conf >= 0.97 (scripts/odc_pseudo.py); odc_test is eval only.
+    "odc": DatasetSpec("parquet", data_files=["cache/odc/train/*.parquet"]),
+    "odc_test": DatasetSpec("parquet", data_files=["cache/odc/test/*.parquet"]),
     # LazyGreed/khmer_img2txt_200K (MIT) minus rows sharing text with eval fixtures (scripts/filter_source.py).
     "lazygreed": DatasetSpec("parquet", data_files=["cache/lazygreed/train/*.parquet"]),
 }

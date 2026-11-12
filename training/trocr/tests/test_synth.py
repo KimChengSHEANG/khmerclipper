@@ -157,3 +157,22 @@ def test_render_screen_sample_busy_background():
 
 def test_render_screen_sample_skips_uncovered_text():
     assert synth.render_screen_sample("ក\U0001F600", (None, None), [font_info(NOTO, "text")], random.Random(0)) is None
+
+
+@needs_raqm
+def test_render_scan_sample_is_a_small_deterministic_document_line():
+    fonts = [font_info(NOTO, "text")]
+    args = ("ភាសាខ្មែរ ២០២៤", ("ស្ត្រីម្នាក់", "ក្រុមហ៊ុន"), fonts)
+    a, meta_a = synth.render_scan_sample(*args, random.Random(5))
+    b, meta_b = synth.render_scan_sample(*args, random.Random(5))
+    assert a.tobytes() == b.tobytes() and meta_a == meta_b
+    assert meta_a["style"] in {"doc_pdf", "doc_scan", "doc_phone"} and a.mode == "RGB"
+    # Scan resolution: the line's ink is 12-30 px, so the box (margins included) stays small.
+    assert a.height <= 30 * 2
+    assert synth.render_scan_sample("ភាសា", (None, None), [font_info(NOTO, "latin")], random.Random(1)) is None
+
+
+def test_build_corpus_finds_banned_text_anywhere_in_a_chunk():
+    banned = "ព្រះរាជក្រឹត្យ"
+    corpus = build_corpus([f"បានឃើញ {banned} ចុះថ្ងៃទី", "បានឃើញ ព្រះរាជក្រម"], exclude=[banned], max_chars=40)
+    assert corpus == ["បានឃើញ ព្រះរាជក្រម"]
