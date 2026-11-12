@@ -6,6 +6,10 @@ Download the level zips from the Google Drive folder linked in the KHOB README f
 Each polygon becomes its axis-aligned bounding box plus a small margin. Labels write a
 space as a literal "\\t"; that becomes a real space, zero-width spaces and stray
 backslashes are dropped. Ids keep the task (task-1..4) so results can be split by it.
+
+Some pages' boxes drift down the page against the image (task-3 goc_2: right at the top, most of a line low at
+the bottom), so a crop shows the next line instead of its label's. register() fits y' = a*y + b per page so box
+middles land on ink and box edges on the gaps between lines; pages that already fit come out near (1, 0).
 """
 from __future__ import annotations
 
@@ -14,12 +18,35 @@ import re
 import sys
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 
 def clean_label(label: str) -> str:
     text = label.replace("\\t", " ").replace("\\", "").replace("​", "")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def register(page: Image.Image, boxes: list[tuple[float, float, float, float]]) -> tuple[float, float]:
+    """(a, b) maximising ink in each box's middle half minus ink at its top and bottom edges."""
+    ink = np.asarray(page.convert("L")) < 128
+    rows = [ink[:, max(0, int(x0)):max(1, int(x1))].mean(axis=1) for x0, _, x1, _ in boxes]
+    n = len(ink)
+
+    def band(r, lo, hi):
+        lo, hi = max(0, int(round(lo))), min(n, int(round(hi)))
+        return r[lo:hi].mean() if hi > lo else 0.0
+
+    def score(a, b):
+        t = 0.0
+        for r, (_, y0, _, y1) in zip(rows, boxes):
+            y0, y1 = a * y0 + b, a * y1 + b
+            h = y1 - y0
+            t += band(r, y0 + h / 4, y1 - h / 4) - band(r, y0 - h / 8, y0 + h / 8) - band(r, y1 - h / 8, y1 + h / 8)
+        return t
+
+    # ponytail: grid search, ~2.5k scores a page; a coarse-to-fine search if pages get big.
+    return max(((a, b) for a in np.arange(0.94, 1.0601, 0.0025) for b in range(-30, 31)), key=lambda ab: score(*ab))
 
 
 def main() -> None:
@@ -34,12 +61,16 @@ def main() -> None:
             page = Image.open(ann_path.parent / Path(ann["imagePath"]).name).convert("RGB")
             # The 2026 release downscaled task-3/4 pages after labelling; scale points to the real size.
             sx, sy = page.width / ann["imageWidth"], page.height / ann["imageHeight"]
+            pts = [[(x * sx, y * sy) for x, y in s["points"]] for s in ann["shapes"]]
+            a, b = register(page, [(min(x for x, _ in p), min(y for _, y in p), max(x for x, _ in p),
+                                    max(y for _, y in p)) for p in pts])
+            print(task.name, ann_path.stem, f"y' = {a:.4f} y {b:+d}")
             for i, shape in enumerate(ann["shapes"]):
                 text = clean_label(shape["label"])
                 if not text:
                     continue
-                xs = [p[0] * sx for p in shape["points"]]
-                ys = [p[1] * sy for p in shape["points"]]
+                xs = [x for x, _ in pts[i]]
+                ys = [a * y + b for _, y in pts[i]]
                 # ponytail: fixed margin of 15% line height; the paper's processed crops aren't published.
                 m = 0.15 * (max(ys) - min(ys))
                 box = (
