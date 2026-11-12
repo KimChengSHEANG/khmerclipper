@@ -1,21 +1,21 @@
 {
-  "version": "khmer-m2",
+  "version": "khmer-m3",
   "files": [
     {
       "name": "encoder.onnx",
-      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/27bb4e728ef85d81ed0851d5b0dc9c24ceb350e5/encoder.onnx",
-      "sha256": "d7f0a04d3b276a37dca4cd7ea1d8fbcc1bfbd7c73c5dcc12b0ff82758634514e",
+      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/efedb1b72e19520cc39d84160ecf9f126ef6378c/encoder.onnx",
+      "sha256": "fbedc9f5bd62c3bd7259171c7786c1a4ce4e7f6b035e942d081f47a97c56c7a5",
       "size": 420034160
     },
     {
       "name": "decoder.onnx",
-      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/27bb4e728ef85d81ed0851d5b0dc9c24ceb350e5/decoder.onnx",
-      "sha256": "66dc7f5b135f50cb337ceb09b97e9066078ada81db44c212b1ca72430a7cf064",
-      "size": 282018112
+      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/efedb1b72e19520cc39d84160ecf9f126ef6378c/decoder.onnx",
+      "sha256": "c3f20de8ad814a1088e5881a25640e2eca9eea1187de251c29959b4ee5a8520c",
+      "size": 282207041
     },
     {
       "name": "tokenizer.json",
-      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/27bb4e728ef85d81ed0851d5b0dc9c24ceb350e5/tokenizer.json",
+      "url": "https://huggingface.co/kcsheang/khmerclipper-trocr-khmer-onnx/resolve/efedb1b72e19520cc39d84160ecf9f126ef6378c/tokenizer.json",
       "sha256": "8ccb77a77205e1915248d95e0436192700f8b4ca8338f2f45afaeeed98c5de79",
       "size": 560294
     }
